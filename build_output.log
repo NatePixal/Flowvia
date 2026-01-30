@@ -1,0 +1,40 @@
+
+> ephemeral-studio-app@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+
+   Creating an optimized production build ...
+ ⚠ Compiled with warnings
+
+./src/components/sales/add-sale-dialog.tsx
+Attempted import error: 'ru' is not exported from 'date-fns/locale/ru' (imported as 'ru').
+
+Import trace for requested module:
+./src/components/sales/add-sale-dialog.tsx
+./src/app/[locale]/(app)/sales/page.tsx
+
+ ⚠ Compiled with warnings
+
+./src/components/sales/add-sale-dialog.tsx
+Attempted import error: 'ru' is not exported from 'date-fns/locale/ru' (imported as 'ru').
+
+Import trace for requested module:
+./src/components/sales/add-sale-dialog.tsx
+./src/app/[locale]/(app)/sales/page.tsx
+
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/components/sales/add-sale-dialog.tsx:23:10
+Type error: Module '"date-fns/locale/ru"' has no exported member 'ru'. Did you mean to use 'import ru from "date-fns/locale/ru"' instead?
+
+[0m [90m 21 |[39m [36mimport[39m { [33mCalendar[39m } [36mfrom[39m [32m'@/components/ui/calendar'[39m[33m;[39m[0m
+[0m [90m 22 |[39m [36mimport[39m { format } [36mfrom[39m [32m'date-fns'[39m[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 23 |[39m [36mimport[39m { ru } [36mfrom[39m [32m'date-fns/locale/ru'[39m[33m;[39m[0m
+[0m [90m    |[39m          [31m[1m^[22m[39m[0m
+[0m [90m 24 |[39m [36mimport[39m { cn } [36mfrom[39m [32m'@/lib/utils'[39m[33m;[39m[0m
+[0m [90m 25 |[39m [36mimport[39m { useToast } [36mfrom[39m [32m'@/hooks/use-toast'[39m[33m;[39m[0m
+[0m [90m 26 |[39m [36mimport[39m { useCompanyCollection } [36mfrom[39m [32m'@/hooks/use-company-collection'[39m[33m;[39m[0m
+Next.js build worker exited with code: 1 and signal: null

@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ================= HELPERS v5.2 ================= */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return isSignedIn() ? request.auth.token.role : null;
+    }
+
+    function getCompanyId() {
+      return isSignedIn() ? request.auth.token.companyId : null;
+    }
+
+    function isDeveloper() {
+      return getRole() == 'developer';
+    }
+
+    function isAdmin() {
+      return getRole() == 'admin';
+    }
+
+    function isRequestingOwnData(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isOwnCompany(companyId) {
+        return getCompanyId() != null && getCompanyId() == companyId;
+    }
+
+    // Helper to ensure new/updated data has a matching companyId in its fields
+    function dataHasMatchingCompanyId(companyId) {
+      return request.resource.data.companyId == companyId;
+    }
+
+    /* ================== RULES ================== */
+
+    match /companies/{companyId} {
+      // Allow developers or members of the company to get the company document
+      allow get: if isDeveloper() || isOwnCompany(companyId);
+      // Allow developers or company admins to update company details
+      allow update: if isDeveloper() || (isAdmin() && isOwnCompany(companyId));
+      // Disallow direct creation/deletion
+      allow create, delete: if false;
+
+      // --- DEEP NESTED RULE for ALL company sub-collections ---
+      match /{document=**} {
+        // Read access for developers or company members
+        allow read: if isDeveloper() || isOwnCompany(companyId);
+
+        // Write access for developers or company members, BUT ONLY if the data includes the correct companyId
+        allow create, update: if (isDeveloper() || isOwnCompany(companyId)) && dataHasMatchingCompanyId(companyId);
+
+        // Delete access for developers or company admins
+        allow delete: if isDeveloper() || (isAdmin() && isOwnCompany(companyId));
+      }
+    }
+
+    match /users/{userId} {
+      allow get: if isDeveloper() || isRequestingOwnData(userId) || (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
+      allow create: if isDeveloper() || isRequestingOwnData(userId) || (isAdmin() && request.resource.data.companyId == getCompanyId());
+      allow update: if isDeveloper() ||
+                       (isRequestingOwnData(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'companyId', 'status', 'isPaid'])) ||
+                       (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
+      allow list: if isDeveloper() || isAdmin();
+      // Deletion of users should be handled by a backend process
+      allow delete: if false;
+    }
+  }
+}

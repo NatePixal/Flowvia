@@ -1,0 +1,33 @@
+diff --git a/node_modules/next/dist/compiled/undici/index.js b/node_modules/next/dist/compiled/undici/index.js
+index 7394628..24a413d 100644
+--- a/node_modules/next/dist/compiled/undici/index.js
++++ b/node_modules/next/dist/compiled/undici/index.js
+@@ -857,7 +857,7 @@ class BodyReadable extends Readable {
+     // 5. If object is not a default iterator object for interface,
+     //    then throw a TypeError.
+     if (typeof this !== 'object' || this === null || !(#target in this)) {
+-      throw new TypeError(`'next' called on an object that does not implement interface ${name} Iterator.`);
++      throw new TypeError(`'next' called on an object that does not implement interface Iterator.`);
+     }
+     const {
+       value,
+diff --git a/node_modules/next/dist/server/web/spec-extension/adapters/next-request.js b/node_modules/next/dist/server/web/spec-extension/adapters/next-request.js
+index f31c510..b5104d5 100644
+--- a/node_modules/next/dist/server/web/spec-extension/adapters/next-request.js
++++ b/node_modules/next/dist/server/web/spec-extension/adapters/next-request.js
+@@ -37,7 +37,7 @@ class NextRequest extends Request {
+         // safari & chrome
+         // https://github.com/whatwg/fetch/issues/1402
+         // https://bugs.webkit.org/show_bug.cgi?id=233227
+-        if (this.method === "POST" && !(input.headers instanceof Headers)) {
++        if (this.method === "POST" && !(input.headers instanceof Headers) && input.headers) {
+             for (const [key, value] of Object.entries(input.headers)){
+                 this.headers.set(key, value);
+             }
+@@ -216,4 +216,4 @@ function fromNodeHeaders(nodeHeaders) {
+     return headers;
+ }
+ exports.fromNodeHeaders = fromNodeHeaders;
+-//# sourceMappingURL=next-request.js.map
+\ No newline at end of file
++//# sourceMappingURL=next-request.js.map
