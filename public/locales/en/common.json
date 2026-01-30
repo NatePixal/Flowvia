@@ -627,24 +627,10 @@
   "lp": {
     "nav": {
       "features": "Features",
-      "team": "Team",
+      "team": "Team Access",
       "pricing": "Pricing",
-      "login": "Log In",
+      "login": "Login",
       "getLicense": "Get License"
-    },
-    "hero": {
-      "kicker": "The OS for Your Business",
-      "title": "One System for Inventory, <highlight>Sales</highlight> & Debts",
-      "subtitle": "The All-in-One Command Center for SMEs. Track everything from incoming stock to client loans, all on one powerful platform.",
-      "ctaPrimary": "Get Started Now",
-      "ctaSecondary": "Book a Demo",
-      "supports": "Multi-Language",
-      "currency": "Multi-Currency"
-    },
-    "mock": {
-      "stockLabel": "Stock Levels",
-      "salesLabel": "Today's Sales",
-      "debtsLabel": "Client Debts"
     },
     "hero": {
       "kicker": "All-in-One Command Center for SMEs",
@@ -654,6 +640,11 @@
       "ctaSecondary": "Book a Demo",
       "supports": "Supports EN / RU / AR / UZ",
       "currency": "USD / AED / UZS"
+    },
+    "mock": {
+      "stockLabel": "Stock Levels",
+      "salesLabel": "Today's Sales",
+      "debtsLabel": "Client Debts"
     },
     "features": {
       "kicker": "The Foundation of Growth",

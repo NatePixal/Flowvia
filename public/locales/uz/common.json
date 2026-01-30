@@ -633,20 +633,6 @@
       "getLicense": "Litsenziya olish"
     },
     "hero": {
-      "kicker": "Sizning biznesingiz uchun operatsion tizim",
-      "title": "Ombor, <highlight>Sotuvlar</highlight> va Qarzlar uchun yagona tizim",
-      "subtitle": "Kichik va o'rta biznes uchun yagona boshqaruv markazi. Kirim bo'lgan tovarlardan tortib mijozlar qarzlarigacha bo'lgan hamma narsani bir kuchli platformada kuzatib boring.",
-      "ctaPrimary": "Hozir boshlash",
-      "ctaSecondary": "Demo buyurtma qilish",
-      "supports": "Ko'p tilli",
-      "currency": "Ko'p valyutali"
-    },
-    "mock": {
-      "stockLabel": "Ombor qoldiqlari",
-      "salesLabel": "Bugungi savdo",
-      "debtsLabel": "Mijoz qarzlari"
-    },
-    "hero": {
       "kicker": "KOBlar uchun yagona boshqaruv markazi",
       "title": "Bitta tizim: <br/><highlight>Ombor, savdo va qarzlar</highlight>",
       "subtitle": "FlowVia ombor, savdo, mijoz qarzlari va xarajatlarni bitta dashboardda rolga asoslangan kirish bilan boshqaradi.",
@@ -654,6 +640,11 @@
       "ctaSecondary": "Demo bron qilish",
       "supports": "EN / RU / AR / UZ",
       "currency": "USD / AED / UZS"
+    },
+    "mock": {
+      "stockLabel": "Ombor qoldiqlari",
+      "salesLabel": "Bugungi savdo",
+      "debtsLabel": "Mijoz qarzlari"
     },
     "features": {
       "kicker": "O‘sish poydevori",

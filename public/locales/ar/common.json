@@ -399,7 +399,6 @@
     "paymentHistory": "سجل الدفعات",
     "completePaymentLedgerForThisSupplier": "السجل الكامل للمدفوعات لهذا المورد.",
     "salarySummary": "ملخص الراتب",
-    "totalBalanceDue": "إجمالي الرصيد المستحق",
     "lastPaymentDate": "تاريخ آخر دفعة",
     "never": "أبدًا",
     "transactionLedger": "سجل المعاملات",
@@ -634,20 +633,6 @@
       "getLicense": "احصل على ترخيص"
     },
     "hero": {
-      "kicker": "نظام التشغيل لعملك",
-      "title": "نظام واحد للمخزون، <highlight>المبيعات</highlight> والديون",
-      "subtitle": "مركز القيادة الكل في واحد للشركات الصغيرة والمتوسطة. تتبع كل شيء من المخزون الوارد إلى قروض العملاء، كل ذلك في منصة واحدة قوية.",
-      "ctaPrimary": "ابدأ الآن",
-      "ctaSecondary": "احجز عرضًا توضيحيًا",
-      "supports": "يدعم لغات متعددة",
-      "currency": "عملات متعددة"
-    },
-    "mock": {
-      "stockLabel": "مستويات المخزون",
-      "salesLabel": "مبيعات اليوم",
-      "debtsLabel": "ديون العملاء"
-    },
-    "hero": {
       "kicker": "مركز قيادة شامل للشركات الصغيرة والمتوسطة",
       "title": "نظام واحد لـ <br/><highlight>المخزون والمبيعات والديون</highlight>",
       "subtitle": "FlowVia يدير المخزون والمبيعات وديون العملاء والمصروفات في لوحة واحدة مع صلاحيات حسب الدور.",
@@ -655,6 +640,11 @@
       "ctaSecondary": "احجز عرضًا",
       "supports": "يدعم EN / RU / AR / UZ",
       "currency": "USD / AED / UZS"
+    },
+    "mock": {
+      "stockLabel": "مستويات المخزون",
+      "salesLabel": "مبيعات اليوم",
+      "debtsLabel": "ديون العملاء"
     },
     "features": {
       "kicker": "أساس النمو",
