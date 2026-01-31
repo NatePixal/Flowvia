@@ -9,11 +9,18 @@ const isLocale = (v: string): v is Locale =>
 const fallbackLng: Locale = "en";
 
 export const config = {
-  // This matcher prevents the middleware from running on static files and API routes.
-  matcher: ['/((?!_next|api|static|.*\\..*).*)'],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+  ],
 };
 
-const PUBLIC_FILE = /\.(.*)$/;
 const COOKIE_NAME = 'NEXT_LOCALE';
 
 export function middleware(request: NextRequest) {
@@ -27,16 +34,6 @@ export function middleware(request: NextRequest) {
 
   // 2. Locale Redirection
   const { pathname } = request.nextUrl;
-
-  // Check if the path is for a static file, which the matcher should already handle but is good for safety.
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/') ||
-    pathname.startsWith('/static') ||
-    PUBLIC_FILE.test(pathname)
-  ) {
-    return NextResponse.next();
-  }
 
   // Check if the pathname already has a locale prefix.
   const pathnameHasLocale = locales.some(

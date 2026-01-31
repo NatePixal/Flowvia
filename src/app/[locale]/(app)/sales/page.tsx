@@ -263,10 +263,26 @@ export default function SalesPage() {
 
         // Recalculate all financials from scratch
         const revenueMinor = toMinor(salePrice * quantity, salePriceCurrency);
-        let revenueBaseMinor = salePriceCurrency === companyBaseCurrency ? revenueMinor : convertMinorToBase(revenueMinor, fx.rateToBase, salePriceCurrency, companyBaseCurrency);
+        
+        let revenueBaseMinor: number;
+        if (salePriceCurrency === companyBaseCurrency) {
+          revenueBaseMinor = revenueMinor;
+        } else {
+          if (!fx?.rateToBase) throw new Error("FX rate is required for cross-currency sales.");
+          revenueBaseMinor = convertMinorToBase(revenueMinor, fx.rateToBase, salePriceCurrency, companyBaseCurrency);
+        }
+
         const costOfGoodsSoldBaseMinor = (productData.costBaseMinor ?? 0) * quantity;
         const grossProfitBaseMinor = revenueBaseMinor - costOfGoodsSoldBaseMinor;
-        const costOfGoodsSoldMinor = salePriceCurrency === companyBaseCurrency ? costOfGoodsSoldBaseMinor : convertBaseToMinor(costOfGoodsSoldBaseMinor, fx.rateToBase, salePriceCurrency, companyBaseCurrency);
+
+        let costOfGoodsSoldMinor: number;
+        if (salePriceCurrency === companyBaseCurrency) {
+          costOfGoodsSoldMinor = costOfGoodsSoldBaseMinor;
+        } else {
+          if (!fx?.rateToBase) throw new Error("FX rate is required for cross-currency sales.");
+          costOfGoodsSoldMinor = convertBaseToMinor(costOfGoodsSoldBaseMinor, fx.rateToBase, salePriceCurrency, companyBaseCurrency);
+        }
+        
         const grossProfitMinor = revenueMinor - costOfGoodsSoldMinor;
 
         // Update inventory
