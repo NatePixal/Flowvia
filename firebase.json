@@ -5,7 +5,8 @@
   },
   "firestore": {
     "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "indexes": "firestore.indexes.json",
+    "database": "(default)"
   },
   "emulators": {
     "hosting": {
@@ -29,7 +30,8 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "functions"
-      ]
+      ],
+      "alwaysDeployFromSource": false
     },
     {
       "backendId": "studio",
@@ -40,7 +42,8 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "functions"
-      ]
+      ],
+      "alwaysDeployFromSource": true
     }
   ]
 }
