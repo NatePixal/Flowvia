@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { locales, fallbackLng } from './locales/settings';
+
+const locales = ["en", "ru", "ar", "uz"] as const;
+type Locale = (typeof locales)[number];
+
+const isLocale = (v: string): v is Locale =>
+  (locales as readonly string[]).includes(v);
+
+const fallbackLng: Locale = "en";
 
 export const config = {
   // This matcher prevents the middleware from running on static files and API routes.
@@ -42,7 +49,8 @@ export function middleware(request: NextRequest) {
 
   // If no locale, redirect to the preferred or fallback locale.
   const preferredLocale = request.cookies.get(COOKIE_NAME)?.value;
-  const localeToUse = preferredLocale && locales.includes(preferredLocale) ? preferredLocale : fallbackLng;
+  const localeToUse: Locale =
+    preferredLocale && isLocale(preferredLocale) ? preferredLocale : fallbackLng;
 
   request.nextUrl.pathname = `/${localeToUse}${pathname}`;
   return NextResponse.redirect(request.nextUrl);
