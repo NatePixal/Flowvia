@@ -2,10 +2,9 @@
 
 import { I18nextProvider } from 'react-i18next';
 import { createInstance, type i18n as I18nInstance } from 'i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getOptions, locales, fallbackLng } from './settings';
-import { useFirebase } from '@/firebase/provider';
+import { useFirebaseOptional } from '@/firebase/provider';
 
 // Keep your existing static imports:
 import enTranslations from '../../public/locales/en/common.json';
@@ -32,6 +31,7 @@ function setDocumentDirAndLang(lng: string) {
 
 async function initI18nextOnce(initialLng: string): Promise<I18nInstance> {
   const i18n = createInstance();
+  const { default: LanguageDetector } = await import('i18next-browser-languagedetector');
 
   await i18n
     .use(LanguageDetector)
@@ -65,7 +65,8 @@ export function I18nProviderClient({
   children: React.ReactNode;
   locale: string;
 }) {
-  const { userProfile } = useFirebase();
+  const firebase = useFirebaseOptional();
+  const userProfile = firebase?.userProfile ?? null;
 
   const preferredLocale = useMemo(() => {
     // Priority:

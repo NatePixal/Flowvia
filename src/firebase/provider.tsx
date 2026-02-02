@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -217,4 +216,8 @@ export const useFirebase = (): AuthContextType => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useFirebase must be used inside FirebaseProvider');
   return ctx;
+};
+
+export const useFirebaseOptional = (): AuthContextType | undefined => {
+  return useContext(AuthContext);
 };
