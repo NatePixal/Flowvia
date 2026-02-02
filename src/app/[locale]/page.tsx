@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -440,7 +439,7 @@ export default function Page({ params }: { params: { locale: string } }) {
   // Tilt refs
   const heroCardRef = useRef<HTMLDivElement | null>(null);
   useTilt(heroCardRef, 8);
-
+    
   return (
     <>
       <AnimatePresence>
@@ -669,5 +668,3 @@ export default function Page({ params }: { params: { locale: string } }) {
     </>
   );
 }
-
-  
