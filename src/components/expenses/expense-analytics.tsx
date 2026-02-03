@@ -1,6 +1,5 @@
-
 'use client';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DollarSign, Tag, TrendingUp, CalendarDays, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -10,9 +9,7 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, PieChart, Pi
 import { ChartTooltipContent, ChartContainer } from '@/components/ui/chart';
 import { subDays, format, startOfDay, isValid } from 'date-fns';
 import { Timestamp, type FieldValue } from 'firebase/firestore';
-import { formatMoneyMinor, toMinor } from '@/lib/money';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
+import { formatMoneyMinor } from '@/lib/money';
 
 interface ExpenseAnalyticsProps {
     expenses: DailyExpense[];
@@ -60,73 +57,52 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
     const { t } = useTranslation();
-    const { baseCurrency, currency: displayCurrency } = useCurrency();
+    const { baseCurrency } = useCurrency();
     
-    // --- State for Chart Currency ---
-    const availableCurrencies = useMemo(() => Array.from(new Set(expenses.map(e => e.currency))), [expenses]);
-    const [chartCurrency, setChartCurrency] = useState<Currency>(displayCurrency);
-
-    useEffect(() => {
-        const defaultChartCurrency = availableCurrencies.includes(displayCurrency) 
-          ? displayCurrency 
-          : availableCurrencies[0] || displayCurrency;
-        setChartCurrency(defaultChartCurrency);
-    }, [expenses, displayCurrency, availableCurrencies]);
-
-    const { totalMinorByCurrency, avgDailyMinorByCurrency, highestCategory } = useMemo(() => {
+    const { totalExpenses, avgDailyExpense, highestCategory } = useMemo(() => {
         if (!expenses || expenses.length === 0) {
-            return { totalMinorByCurrency: {}, avgDailyMinorByCurrency: {}, highestCategory: 'N/A' };
+            return { totalExpenses: 0, avgDailyExpense: 0, highestCategory: 'N/A' };
         }
         
-        const totalMinorByCurrency: Record<string, number> = {};
-        const dailyTotals: Record<Currency, Record<string, number>> = { USD: {}, AED: {}, UZS: {}, CNY: {} };
-        const categoryTotalsMinor: Record<string, number> = {};
+        let totalBaseMinor = 0;
+        const dailyTotals: Record<string, number> = {};
+        const categoryTotals: Record<string, number> = {};
 
         expenses.forEach(expense => {
-            const minorAmount = toMinor(expense.amount, expense.currency);
-            totalMinorByCurrency[expense.currency] = (totalMinorByCurrency[expense.currency] || 0) + minorAmount;
+            const amountBaseMinor = expense.amountBaseMinor || 0;
+            totalBaseMinor += amountBaseMinor;
 
             const expenseDate = safeGetDate(expense.date);
             if (expenseDate) {
               const dateStr = format(expenseDate, 'yyyy-MM-dd');
-              dailyTotals[expense.currency][dateStr] = (dailyTotals[expense.currency][dateStr] || 0) + minorAmount;
+              dailyTotals[dateStr] = (dailyTotals[dateStr] || 0) + amountBaseMinor;
             }
             
-            // Highest category is now tied to the selected chart currency for consistency
-            if (expense.currency === chartCurrency) {
-              categoryTotalsMinor[expense.expenseType] = (categoryTotalsMinor[expense.expenseType] || 0) + minorAmount;
-            }
+            categoryTotals[expense.expenseType] = (categoryTotals[expense.expenseType] || 0) + amountBaseMinor;
         });
 
-        const avgDailyMinorByCurrency: Record<string, number> = {};
-        for (const currency in dailyTotals) {
-            const numDaysForCurrency = Object.keys(dailyTotals[currency as Currency]).length;
-            if (numDaysForCurrency > 0) {
-                avgDailyMinorByCurrency[currency as Currency] = totalMinorByCurrency[currency as Currency] / numDaysForCurrency;
-            }
-        }
+        const numDays = Object.keys(dailyTotals).length;
+        const avgDaily = numDays > 0 ? totalBaseMinor / numDays : 0;
         
-        const highestCatEntry = Object.entries(categoryTotalsMinor).sort(([,a],[,b]) => b-a)[0];
+        const highestCatEntry = Object.entries(categoryTotals).sort(([,a],[,b]) => b-a)[0];
 
         return {
-            totalMinorByCurrency,
-            avgDailyMinorByCurrency,
-            highestCategory: highestCatEntry ? t(`expenses.${highestCatEntry[0].toLowerCase()}`) : t('expenses.notApplicableForCurrency'),
+            totalExpenses: totalBaseMinor,
+            avgDailyExpense: avgDaily,
+            highestCategory: highestCatEntry ? t(`expenses.${highestCatEntry[0].toLowerCase()}`) : 'N/A',
         };
-    }, [expenses, t, chartCurrency]);
+    }, [expenses, t]);
 
     const expenseDistribution = useMemo(() => {
         const categoryTotals: { [key: string]: number } = {};
-        expenses
-            .filter(e => e.currency === chartCurrency)
-            .forEach(expense => {
-                const minorAmount = toMinor(expense.amount, expense.currency);
-                categoryTotals[expense.expenseType] = (categoryTotals[expense.expenseType] || 0) + minorAmount;
+        expenses.forEach(expense => {
+                const amountBaseMinor = expense.amountBaseMinor || 0;
+                categoryTotals[expense.expenseType] = (categoryTotals[expense.expenseType] || 0) + amountBaseMinor;
             });
         return Object.entries(categoryTotals)
           .map(([name, value]) => ({ name, value, translatedName: t(`expenses.${name.toLowerCase()}`) }))
           .sort((a, b) => b.value - a.value);
-    }, [expenses, t, chartCurrency]);
+    }, [expenses, t]);
     
     const expensesByDay = useMemo(() => {
         const last7DaysMap = new Map<string, { date: string; expenses: number }>();
@@ -136,58 +112,39 @@ export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
             last7DaysMap.set(format(d, 'yyyy-MM-dd'), { date: dateStr, expenses: 0 });
         }
     
-        expenses
-            .filter(e => e.currency === chartCurrency)
-            .forEach((expense) => {
-                const expenseDate = safeGetDate(expense.date);
-                if (expenseDate) {
-                  const dateStr = format(startOfDay(expenseDate), 'yyyy-MM-dd');
-                  if (last7DaysMap.has(dateStr)) {
-                      const dayRecord = last7DaysMap.get(dateStr)!;
-                      const minorAmount = toMinor(expense.amount, expense.currency);
-                      dayRecord.expenses += minorAmount;
-                  }
+        expenses.forEach((expense) => {
+            const expenseDate = safeGetDate(expense.date);
+            if (expenseDate) {
+                const dateStr = format(startOfDay(expenseDate), 'yyyy-MM-dd');
+                if (last7DaysMap.has(dateStr)) {
+                    const dayRecord = last7DaysMap.get(dateStr)!;
+                    const amountBaseMinor = expense.amountBaseMinor || 0;
+                    dayRecord.expenses += amountBaseMinor;
                 }
-            });
+            }
+        });
     
         return Array.from(last7DaysMap.values());
-    }, [expenses, chartCurrency]);
-
-
-    const totalExpensesDisplay = useMemo(() => {
-      const entries = Object.entries(totalMinorByCurrency);
-      if (entries.length === 0) return formatMoneyMinor(0, baseCurrency);
-      return entries.map(([currency, amount]) => (
-        <div key={currency}>{formatMoneyMinor(amount, currency as Currency)}</div>
-      ));
-    }, [totalMinorByCurrency, baseCurrency]);
-
-    const avgDailyDisplay = useMemo(() => {
-      const entries = Object.entries(avgDailyMinorByCurrency);
-      if (entries.length === 0) return formatMoneyMinor(0, baseCurrency);
-      return entries.map(([currency, amount]) => (
-        <div key={currency}>{formatMoneyMinor(amount, currency as Currency)}</div>
-      ));
-    }, [avgDailyMinorByCurrency, baseCurrency]);
+    }, [expenses]);
     
-    const hasAnyExpenses = useMemo(() => Object.keys(totalMinorByCurrency).length > 0, [totalMinorByCurrency]);
+    const hasAnyExpenses = expenses && expenses.length > 0;
 
     return (
         <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard 
                     title={t('expenses.totalExpenses')}
-                    value={hasAnyExpenses ? <div className="text-lg">{totalExpensesDisplay}</div> : formatMoneyMinor(0, baseCurrency)}
+                    value={formatMoneyMinor(totalExpenses, baseCurrency)}
                     icon={DollarSign}
                 />
                 <StatCard 
-                    title={`${t('expenses.highestExpenseCategory')} (${chartCurrency})`}
+                    title={`${t('expenses.highestExpenseCategory')}`}
                     value={highestCategory}
                     icon={Tag}
                 />
                 <StatCard 
                     title={t('expenses.averageDailyExpense')}
-                    value={hasAnyExpenses ? <div className="text-lg">{avgDailyDisplay}</div> : formatMoneyMinor(0, baseCurrency)}
+                    value={formatMoneyMinor(avgDailyExpense, baseCurrency)}
                     icon={CalendarDays}
                 />
                 <StatCard 
@@ -199,23 +156,10 @@ export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
                 <Card className="lg:col-span-2">
                     <CardHeader>
-                        <div className="flex justify-between items-center">
-                            <CardTitle>{`${t('expenses.expenseDistribution')} (${chartCurrency})`}</CardTitle>
-                             <div className="w-[150px]">
-                                <Label className="text-xs text-muted-foreground">{t('expenses.chartsCurrency')}</Label>
-                                <Select value={chartCurrency} onValueChange={(v) => setChartCurrency(v as Currency)} disabled={availableCurrencies.length === 0}>
-                                    <SelectTrigger className="h-8">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {availableCurrencies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
+                        <CardTitle>{`${t('expenses.expenseDistribution')} (${baseCurrency})`}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                       {expenseDistribution.length > 0 ? (
+                       {hasAnyExpenses ? (
                             <ChartContainer config={{}} className="h-[250px] w-full">
                                 <PieChart>
                                     <Pie 
@@ -225,7 +169,8 @@ export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
                                         cx="50%" 
                                         cy="50%" 
                                         outerRadius={80} 
-                                        label
+                                        labelLine={false}
+                                        label={false}
                                     >
                                         {expenseDistribution.map((entry) => (
                                             <Cell 
@@ -236,7 +181,7 @@ export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
                                     </Pie>
                                     <Tooltip 
                                         content={<ChartTooltipContent 
-                                            formatter={(value) => formatMoneyMinor(value as number, chartCurrency)} 
+                                            formatter={(value) => formatMoneyMinor(value as number, baseCurrency)} 
                                             nameKey="translatedName"
                                         />} 
                                     />
@@ -246,31 +191,29 @@ export default function ExpenseAnalytics({ expenses }: ExpenseAnalyticsProps) {
                        ) : (
                             <div className="h-[250px] flex flex-col items-center justify-center text-center text-muted-foreground">
                                 <PieChartIcon className="h-10 w-10 mb-2" />
-                                <p>{t('expenses.noExpensesRecordedIn', { currency: chartCurrency })}</p>
+                                <p>{t('expenses.noExpensesRecorded')}</p>
                             </div>
                        )}
                     </CardContent>
                 </Card>
                 <Card className="lg:col-span-3">
                     <CardHeader>
-                         <div className="flex justify-between items-center">
-                            <CardTitle>{`${t('expenses.expenseTrend')} (${chartCurrency})`}</CardTitle>
-                        </div>
+                        <CardTitle>{`${t('expenses.expenseTrend')} (${baseCurrency})`}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                       {expensesByDay.some(d => d.expenses > 0) ? (
+                       {hasAnyExpenses ? (
                             <ChartContainer config={{ expenses: { label: t('expenses.pageTitle'), color: "#28c9c9" } }} className="h-[250px] w-full">
                                 <BarChart data={expensesByDay}>
                                     <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
-                                    <YAxis tickFormatter={(value) => formatMoneyMinor(value as number, chartCurrency).replace(/(\.00|,[00])$/, '')} />
-                                    <Tooltip cursor={false} content={<ChartTooltipContent indicator="dot" formatter={(value) => formatMoneyMinor(value as number, chartCurrency)} />} />
+                                    <YAxis tickFormatter={(value) => formatMoneyMinor(value as number, baseCurrency).replace(/(\.00|,[00])$/, '')} />
+                                    <Tooltip cursor={false} content={<ChartTooltipContent indicator="dot" formatter={(value) => formatMoneyMinor(value as number, baseCurrency)} />} />
                                     <Bar dataKey="expenses" fill="var(--color-expenses)" radius={8} />
                                 </BarChart>
                             </ChartContainer>
                        ) : (
                             <div className="h-[250px] flex flex-col items-center justify-center text-center text-muted-foreground">
                                 <BarChart2 className="h-10 w-10 mb-2" />
-                                <p>{t('expenses.noExpensesRecordedIn', { currency: chartCurrency })}</p>
+                                <p>{t('expenses.noExpensesRecorded')}</p>
                             </div>
                        )}
                     </CardContent>
