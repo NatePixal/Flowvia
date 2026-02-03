@@ -78,7 +78,7 @@ export default function RecentShipments() {
               <TableCell className="px-2 py-1.5 text-xs font-medium text-foreground truncate">{shipment.productName}</TableCell>
               <TableCell className="px-2 py-1.5 text-xs text-muted-foreground text-center">{shipment.quantity}</TableCell>
                <TableCell className="px-2 py-1.5 text-xs text-center">
-                    <Badge variant="secondary" className="bg-green-500/10 text-green-400 border-green-500/20">{t(`status.${shipment.status.toLowerCase()}`)}</Badge>
+                    <Badge variant="success">{t(`status.${shipment.status.toLowerCase()}`)}</Badge>
                </TableCell>
               <TableCell className="px-2 py-1.5 text-xs text-muted-foreground text-right">{shipment.date}</TableCell>
           </TableRow>

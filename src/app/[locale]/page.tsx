@@ -215,12 +215,12 @@ function LanguageSelect({ currentLocale }: { currentLocale: Lng }) {
   };
 
   return (
-    <div className="flex items-center gap-2 border border-white/10 bg-white/5 rounded-xl px-3 py-2">
+    <div className="flex items-center gap-2 border border-border bg-card/50 rounded-xl px-3 py-2">
       <span className="material-symbols-outlined text-primary text-[18px]">language</span>
       <select
         value={value}
         onChange={(e) => setLng(e.target.value as Lng)}
-        className="bg-transparent text-sm font-bold text-slate-200 outline-none border-0 focus:ring-0"
+        className="bg-transparent text-sm font-bold text-muted-foreground outline-none border-0 focus:ring-0"
         aria-label="Language"
       >
         <option value="en">EN</option>
@@ -281,7 +281,7 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-[100] bg-navy-deep flex flex-col items-center justify-center overflow-hidden"
+      className="fixed inset-0 z-[100] bg-background flex flex-col items-center justify-center overflow-hidden"
       variants={container}
       initial="hidden"
       animate="show"
@@ -291,9 +291,9 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
         {[
           { text: 'Sales + $4,200', cls: 'text-primary top-[22%]' },
           { text: 'Expense - $380', cls: 'text-red-400 top-[30%]' },
-          { text: 'Invoice #104 Paid', cls: 'text-brand-blue top-[38%]' },
+          { text: 'Invoice #104 Paid', cls: 'text-blue-400 top-[38%]' },
           { text: 'Net Profit + 18%', cls: 'text-emerald-300 top-[46%]' },
-          { text: 'Stock 8,421', cls: 'text-slate-300 top-[54%]' },
+          { text: 'Stock 8,421', cls: 'text-muted-foreground top-[54%]' },
         ].map((p, i) => (
           <motion.span
             key={p.text}
@@ -321,7 +321,7 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
         </motion.div>
 
         <motion.div
-          className="logo-ribbon bg-gradient-to-br from-brand-blue to-cyan-600 absolute w-[88px] h-[28px] rounded-2xl flex items-center justify-center"
+          className="logo-ribbon bg-gradient-to-br from-blue-500 to-cyan-600 absolute w-[88px] h-[28px] rounded-2xl flex items-center justify-center"
           style={{ right: 0, top: 52 }}
           variants={ribbon}
           custom={1}
@@ -347,7 +347,7 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
 
       <div className="overflow-hidden h-14 relative">
         <motion.h1
-          className="text-5xl font-black text-white"
+          className="text-5xl font-black text-foreground"
           initial={{ y: 64 }}
           animate={{ y: 0, transition: { delay: 1.25, duration: 0.85, ease: [0.2, 0.9, 0.2, 1] } }}
         >
@@ -356,7 +356,7 @@ function IntroOverlay({ onDone }: { onDone: () => void }) {
       </div>
 
       <motion.p
-        className="text-slate-500 text-sm font-bold tracking-widest uppercase mt-2"
+        className="text-muted-foreground text-sm font-bold tracking-widest uppercase mt-2"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0, transition: { delay: 1.55, duration: 0.7 } }}
       >
@@ -414,20 +414,20 @@ export default function Page({ params }: { params: { locale: string } }) {
   }) => (
     <motion.a
       href={href}
-      className="nav-link relative text-slate-200/90 font-bold text-sm px-3 py-2 rounded-xl"
+      className="nav-link relative text-muted-foreground font-bold text-sm px-3 py-2 rounded-xl"
       whileHover={{ scale: 1.04 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 500, damping: 35 }}
     >
       <span className="relative z-10">{label}</span>
-      <span className="absolute inset-0 rounded-xl bg-white/0 hover:bg-white/5 transition-colors" />
+      <span className="absolute inset-0 rounded-xl bg-secondary/0 hover:bg-secondary/50 transition-colors" />
     </motion.a>
   );
 
   const LicenseButton = () => (
     <motion.a
       href="#pricing"
-      className="bg-primary hover:bg-primary/90 text-navy-deep px-6 py-2.5 rounded-xl text-sm font-extrabold"
+      className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2.5 rounded-xl text-sm font-extrabold"
       whileHover={{ scale: 1.06 }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 520, damping: 28 }}
@@ -439,38 +439,38 @@ export default function Page({ params }: { params: { locale: string } }) {
   // Tilt refs
   const heroCardRef = useRef<HTMLDivElement | null>(null);
   useTilt(heroCardRef, 8);
-    
+
   return (
     <>
       <AnimatePresence>
         {showIntro && <IntroOverlay onDone={finishIntro} />}
       </AnimatePresence>
 
-      <nav className="sticky top-0 z-50 w-full border-b border-white/5 bg-navy-deep/80 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <div className="flex items-center gap-2">
               <div className="bg-primary p-1.5 rounded-lg shadow-lg shadow-primary/20">
-                <svg className="size-6 text-navy-deep" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <svg className="size-6 text-primary-foreground" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                   <path clipRule="evenodd" d="M39.475 21.6262C40.358 21.4363 40.6863 21.5589 40.7581 21.5934C40.7876 21.655 40.8547 21.857 40.8082 22.3336C40.7408 23.0255 40.4502 24.0046 39.8572 25.2301C38.6799 27.6631 36.5085 30.6631 33.5858 33.5858C30.6631 36.5085 27.6632 38.6799 25.2301 39.8572C24.0046 40.4502 23.0255 40.7407 22.3336 40.8082C21.8571 40.8547 21.6551 40.7875 21.5934 40.7581C21.5589 40.6863 21.4363 40.358 21.6262 39.475C21.8562 38.4054 22.4689 36.9657 23.5038 35.2817C24.7575 33.2417 26.5497 30.9744 28.7621 28.762C30.9744 26.5497 33.2417 24.7574 35.2817 23.5037C36.9657 22.4689 38.4054 21.8562 39.475 21.6262ZM4.41189 29.2403L18.7597 43.5881C19.8813 44.7097 21.4027 44.9179 22.7217 44.7893C24.0585 44.659 25.5148 44.1631 26.9723 43.4579C29.9052 42.0387 33.2618 39.5667 36.4142 36.4142C39.5667 33.2618 42.0387 29.9052 43.4579 26.9723C44.1631 25.5148 44.659 24.0585 44.7893 22.7217C44.9179 21.4027 44.7097 19.8813 43.5881 18.7597L29.2403 4.41187C27.8527 3.02428 25.8765 3.02573 24.2861 3.36776C22.6081 3.72863 20.7334 4.58419 18.8396 5.74801C16.4978 7.18716 13.9881 9.18353 11.5858 11.5858C9.18354 13.988 7.18717 16.4978 5.74802 18.8396C4.58421 20.7334 3.72865 22.6081 3.36778 24.2861C3.02574 25.8765 3.02429 27.8527 4.41189 29.2403Z" fill="currentColor" fillRule="evenodd"></path>
                 </svg>
               </div>
-              <span className="text-2xl font-black tracking-tighter text-white">FlowVia</span>
+              <span className="text-2xl font-black tracking-tighter text-foreground">FlowVia</span>
             </div>
 
             <div className="hidden md:flex items-center gap-3">
               <LanguageSelect currentLocale={locale} />
 
-              <div className="h-5 w-px bg-white/10 mx-2"></div>
+              <div className="h-5 w-px bg-border mx-2"></div>
 
               <NavLink href="#features" label={t('lp.nav.features')} />
               <NavLink href="#roles" label={t('lp.nav.team')} />
               <NavLink href="#pricing" label={t('lp.nav.pricing')} />
 
-              <div className="h-5 w-px bg-white/10 mx-2"></div>
+              <div className="h-5 w-px bg-border mx-2"></div>
 
               <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }}>
-                <Link className="nav-link text-slate-200/90 font-bold text-sm px-3 py-2 rounded-xl hover:bg-white/5 transition-colors" href={`/${locale}/login`}>
+                <Link className="nav-link text-muted-foreground font-bold text-sm px-3 py-2 rounded-xl hover:bg-secondary/50 transition-colors" href={`/${locale}/login`}>
                   {t('lp.nav.login')}
                 </Link>
               </motion.div>
@@ -505,7 +505,7 @@ export default function Page({ params }: { params: { locale: string } }) {
                 </span>
               </div>
 
-              <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] mb-8 text-white">
+              <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] mb-8 text-foreground">
                 <Trans
                   i18nKey="lp.hero.title"
                   components={{
@@ -515,13 +515,13 @@ export default function Page({ params }: { params: { locale: string } }) {
                 />
               </h1>
 
-              <p className="text-lg md:text-xl text-slate-400 mb-12 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+              <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
                 {t('lp.hero.subtitle')}
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-5">
                 <motion.button
-                  className="w-full sm:w-auto px-10 py-5 bg-primary text-navy-deep rounded-2xl font-black text-lg"
+                  className="w-full sm:w-auto px-10 py-5 bg-primary text-primary-foreground rounded-2xl font-black text-lg"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 32 }}
@@ -530,7 +530,7 @@ export default function Page({ params }: { params: { locale: string } }) {
                 </motion.button>
 
                 <motion.button
-                  className="w-full sm:w-auto px-10 py-5 bg-charcoal border border-white/10 text-white rounded-2xl font-bold text-lg hover:bg-slate-accent transition-colors inline-flex items-center justify-center gap-3"
+                  className="w-full sm:w-auto px-10 py-5 bg-card border border-border text-foreground rounded-2xl font-bold text-lg hover:bg-muted transition-colors inline-flex items-center justify-center gap-3"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 32 }}
@@ -542,12 +542,12 @@ export default function Page({ params }: { params: { locale: string } }) {
 
               <div className="mt-8 flex items-center justify-center lg:justify-start gap-6 opacity-70">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-slate-300">language</span>
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300">{t('lp.hero.supports')}</span>
+                  <span className="material-symbols-outlined text-sm text-muted-foreground">language</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('lp.hero.supports')}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-slate-300">payments</span>
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300">{t('lp.hero.currency')}</span>
+                  <span className="material-symbols-outlined text-sm text-muted-foreground">payments</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t('lp.hero.currency')}</span>
                 </div>
               </div>
             </motion.div>
@@ -560,77 +560,77 @@ export default function Page({ params }: { params: { locale: string } }) {
               transition={{ delay: 0.12, duration: 0.7, ease: 'easeOut' }}
             >
               <div className="relative group dashboard-glow animate-float-slow">
-                <div className="absolute -inset-1 bg-gradient-to-r from-primary to-brand-blue rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-700"></div>
+                <div className="absolute -inset-1 bg-gradient-to-r from-primary to-blue-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-700"></div>
 
                 <div
                   ref={heroCardRef}
-                  className="relative bg-navy-deep rounded-3xl border border-white/10 shadow-2xl overflow-hidden aspect-[4/3]"
+                  className="relative bg-card rounded-3xl border border-border shadow-2xl overflow-hidden aspect-[4/3]"
                   style={{ transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0)' }}
                 >
-                  <div className="bg-charcoal/80 border-b border-white/5 px-5 py-3 flex items-center justify-between">
+                  <div className="bg-muted/30 border-b border-border/50 px-5 py-3 flex items-center justify-between">
                     <div className="flex gap-1.5">
                       <div className="size-2.5 rounded-full bg-red-500/50"></div>
                       <div className="size-2.5 rounded-full bg-amber-500/50"></div>
                       <div className="size-2.5 rounded-full bg-emerald-500/50"></div>
                     </div>
-                    <div className="text-[10px] text-slate-500 font-mono tracking-tight bg-navy-deep/50 px-3 py-1 rounded border border-white/5">
+                    <div className="text-[10px] text-muted-foreground font-mono tracking-tight bg-background/50 px-3 py-1 rounded border border-border">
                       flowvia.io/admin/inventory-overview
                     </div>
                     <div className="size-2.5"></div>
                   </div>
 
-                  <div className="p-6 h-full bg-navy-deep">
+                  <div className="p-6 h-full bg-card">
                     <div className="grid grid-cols-12 gap-4">
                       <div className="col-span-3 space-y-4">
-                        <div className="h-4 w-full bg-slate-800/50 rounded"></div>
+                        <div className="h-4 w-full bg-muted/50 rounded"></div>
                         <div className="space-y-2">
                           <div className="h-2 w-3/4 bg-primary/20 rounded"></div>
-                          <div className="h-2 w-full bg-slate-800/30 rounded"></div>
-                          <div className="h-2 w-2/3 bg-slate-800/30 rounded"></div>
-                          <div className="h-2 w-full bg-slate-800/30 rounded"></div>
+                          <div className="h-2 w-full bg-muted/30 rounded"></div>
+                          <div className="h-2 w-2/3 bg-muted/30 rounded"></div>
+                          <div className="h-2 w-full bg-muted/30 rounded"></div>
                         </div>
                         <div className="pt-4 space-y-2">
-                          <div className="h-2 w-1/2 bg-slate-800/50 rounded"></div>
-                          <div className="h-12 w-full bg-charcoal rounded-lg border border-white/5"></div>
+                          <div className="h-2 w-1/2 bg-muted/50 rounded"></div>
+                          <div className="h-12 w-full bg-background rounded-lg border border-border"></div>
                         </div>
                       </div>
 
                       <div className="col-span-9 space-y-4">
                         <div className="grid grid-cols-3 gap-3">
-                          <div className="bg-charcoal p-3 rounded-xl border border-white/5 hover:bg-slate-800 transition-colors">
-                            <p className="text-[8px] text-slate-500 uppercase font-bold">{t('lp.mock.stockLabel')}</p>
-                            <p className="text-sm font-black text-white">8,421</p>
+                          <div className="bg-background p-3 rounded-xl border border-border hover:bg-muted transition-colors">
+                            <p className="text-[8px] text-muted-foreground uppercase font-bold">{t('lp.mock.stockLabel')}</p>
+                            <p className="text-sm font-black text-foreground">8,421</p>
                           </div>
-                          <div className="bg-charcoal p-3 rounded-xl border border-white/5 hover:bg-slate-800 transition-colors">
-                            <p className="text-[8px] text-slate-500 uppercase font-bold">{t('lp.mock.salesLabel')}</p>
+                          <div className="bg-background p-3 rounded-xl border border-border hover:bg-muted transition-colors">
+                            <p className="text-[8px] text-muted-foreground uppercase font-bold">{t('lp.mock.salesLabel')}</p>
                             <p className="text-sm font-black text-primary">$2,140.00</p>
                           </div>
-                          <div className="bg-charcoal p-3 rounded-xl border border-white/5 hover:bg-slate-800 transition-colors">
-                            <p className="text-[8px] text-slate-500 uppercase font-bold">{t('lp.mock.debtsLabel')}</p>
+                          <div className="bg-background p-3 rounded-xl border border-border hover:bg-muted transition-colors">
+                            <p className="text-[8px] text-muted-foreground uppercase font-bold">{t('lp.mock.debtsLabel')}</p>
                             <p className="text-sm font-black text-amber-500">$12,450.00</p>
                           </div>
                         </div>
 
-                        <div className="bg-charcoal/50 rounded-xl border border-white/5 p-4 h-48">
+                        <div className="bg-background/50 rounded-xl border border-border p-4 h-48">
                           <div className="flex justify-between items-center mb-4">
-                            <div className="h-3 w-24 bg-slate-800 rounded"></div>
-                            <div className="h-3 w-16 bg-slate-800 rounded"></div>
+                            <div className="h-3 w-24 bg-muted rounded"></div>
+                            <div className="h-3 w-16 bg-muted rounded"></div>
                           </div>
                           <div className="space-y-3">
                             <div className="flex items-center gap-3">
-                              <div className="size-6 bg-slate-800 rounded"></div>
-                              <div className="flex-1 h-2 bg-slate-800/50 rounded"></div>
-                              <div className="w-12 h-2 bg-slate-800/50 rounded"></div>
+                              <div className="size-6 bg-muted rounded"></div>
+                              <div className="flex-1 h-2 bg-muted/50 rounded"></div>
+                              <div className="w-12 h-2 bg-muted/50 rounded"></div>
                             </div>
                             <div className="flex items-center gap-3">
-                              <div className="size-6 bg-slate-800 rounded"></div>
-                              <div className="flex-1 h-2 bg-slate-800/50 rounded"></div>
-                              <div className="w-12 h-2 bg-slate-800/50 rounded"></div>
+                              <div className="size-6 bg-muted rounded"></div>
+                              <div className="flex-1 h-2 bg-muted/50 rounded"></div>
+                              <div className="w-12 h-2 bg-muted/50 rounded"></div>
                             </div>
                             <div className="flex items-center gap-3">
-                              <div className="size-6 bg-slate-800 rounded"></div>
-                              <div className="flex-1 h-2 bg-slate-800/50 rounded"></div>
-                              <div className="w-12 h-2 bg-slate-800/50 rounded"></div>
+                              <div className="size-6 bg-muted rounded"></div>
+                              <div className="flex-1 h-2 bg-muted/50 rounded"></div>
+                              <div className="w-12 h-2 bg-muted/50 rounded"></div>
                             </div>
                           </div>
                         </div>
@@ -649,7 +649,7 @@ export default function Page({ params }: { params: { locale: string } }) {
           Your main lag/glitch issues were in: tilt + DOM i18n + intro timeouts + background.
           Those are fully fixed above. */}
 
-      <footer className="bg-navy-deep border-t border-white/5 py-16">
+      <footer className="bg-background border-t border-border py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-12">
             <div className="flex items-center gap-3">
@@ -658,10 +658,10 @@ export default function Page({ params }: { params: { locale: string } }) {
                   <path d="M39.475 21.6262C40.358 21.4363 40.6863 21.5589 40.7581 21.5934C40.7876 21.655 40.8547 21.857 40.8082 22.3336C40.7408 23.0255 40.4502 24.0046 39.8572 25.2301C38.6799 27.6631 36.5085 30.6631 33.5858 33.5858C30.6631 36.5085 27.6632 38.6799 25.2301 39.8572C24.0046 40.4502 23.0255 40.7407 22.3336 40.8082C21.8571 40.8547 21.6551 40.7875 21.5934 40.7581C21.5589 40.6863 21.4363 40.358 21.6262 39.475C21.8562 38.4054 22.4689 36.9657 23.5038 35.2817C24.7575 33.2417 26.5497 30.9744 28.7621 28.762C30.9744 26.5497 33.2417 24.7574 35.2817 23.5037C36.9657 22.4689 38.4054 21.8562 39.475 21.6262ZM4.41189 29.2403L18.7597 43.5881C19.8813 44.7097 21.4027 44.9179 22.7217 44.7893C24.0585 44.659 25.5148 44.1631 26.9723 43.4579C29.9052 42.0387 33.2618 39.5667 36.4142 36.4142C39.5667 33.2618 42.0387 29.9052 43.4579 26.9723C44.1631 25.5148 44.659 24.0585 44.7893 22.7217C44.9179 21.4027 44.7097 19.8813 43.5881 18.7597L29.2403 4.41187C27.8527 3.02428 25.8765 3.02573 24.2861 3.36776C22.6081 3.72863 20.7334 4.58419 18.8396 5.74801C16.4978 7.18716 13.9881 9.18353 11.5858 11.5858C9.18354 13.988 7.18717 16.4978 5.74802 18.8396C4.58421 20.7334 3.72865 22.6081 3.36778 24.2861C3.02574 25.8765 3.02429 27.8527 4.41189 29.2403Z" fill="currentColor"></path>
                 </svg>
               </div>
-              <span className="text-2xl font-black text-white">FlowVia</span>
+              <span className="text-2xl font-black text-foreground">FlowVia</span>
             </div>
 
-            <p className="text-xs text-slate-600 font-medium">© 2026 FlowVia Business Solutions.</p>
+            <p className="text-xs text-muted-foreground font-medium">© 2026 FlowVia Business Solutions.</p>
           </div>
         </div>
       </footer>

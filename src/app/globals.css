@@ -20,10 +20,12 @@
     --accent-pressed: 179 81% 34%;
     --accent-soft: 179 81% 36% / 0.1;
     --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
     --warning: 38 92% 51%;
+    --warning-foreground: 38 95% 15%;
     --danger: 0 84% 60%;
     --info: 217 91% 60%;
-    
+
     --radius: 0.75rem;
 
     --background: var(--bg);
@@ -52,6 +54,12 @@
     --sidebar-accent: var(--accent);
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-ring: var(--accent);
+    
+    --chart-1: 220 84% 60%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 38 92% 51%;
+    --chart-4: 0 84% 60%;
+    --chart-5: 24 94% 55%;
   }
 
   .dark {
@@ -70,8 +78,10 @@
     --accent-hover: 179 67% 73%;
     --accent-pressed: 179 67% 65%;
     --accent-soft: 179 67% 69% / 0.12;
-    --success: 142 76% 36%;
+    --success: 142 76% 40%;
+    --success-foreground: 142 80% 90%;
     --warning: 38 92% 51%;
+    --warning-foreground: 38 95% 15%;
     --danger: 0 72% 51%;
     --info: 217 91% 60%;
 
@@ -101,6 +111,12 @@
     --sidebar-accent: var(--accent);
     --sidebar-accent-foreground: 224 44% 7%;
     --sidebar-ring: var(--accent);
+    
+    --chart-1: 217 91% 60%;
+    --chart-2: 142 76% 40%;
+    --chart-3: 38 92% 51%;
+    --chart-4: 0 72% 51%;
+    --chart-5: 40 94% 55%;
   }
 
   body {

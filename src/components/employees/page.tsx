@@ -126,7 +126,7 @@ export default function EmployeesPage() {
                       <TableCell>{employee.role}</TableCell>
                       <TableCell>{formatMoneyMinor(toMinor(employee.default_salary_amount, employee.salary_currency), employee.salary_currency)} / {t(`employees.${employee.salary_type}`)}</TableCell>
                       <TableCell>
-                        <Badge variant={employee.status === 'active' ? 'secondary' : 'destructive'} className={employee.status === 'active' ? 'bg-green-100 text-green-800' : ''}>
+                        <Badge variant={employee.status === 'active' ? 'success' : 'destructive'}>
                           {t(`status.${employee.status}`)}
                         </Badge>
                       </TableCell>
