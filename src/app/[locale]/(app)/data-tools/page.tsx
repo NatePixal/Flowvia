@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -6,7 +7,7 @@ import { useCompanyCollection } from "@/hooks/use-company-collection";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExcelImportDialog } from "@/components/data/excel-import-dialog";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
+import DateRangePicker from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
