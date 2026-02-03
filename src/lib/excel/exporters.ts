@@ -1,3 +1,4 @@
+
 import { exportToXlsx } from "@/lib/export/xlsx-export";
 import { fromMinor, toMinor } from "@/lib/money";
 import { Client, ClientLedgerEntry, Currency, DailyExpense, Product, Sale, UserProfile, Employee } from "@/lib/types";
@@ -13,7 +14,7 @@ const safeToDate = (v: any): Date | null => {
 
 export function exportSalesXlsx(filename: string, sales: Sale[], productsById: Map<string, Product>, sellersById?: Map<string, UserProfile>) {
   exportToXlsx(filename, "Sales", sales, [
-    { header: "Date", value: (r) => safeToDate(r.recordedAt ?? r.createdAt ?? r.date) },
+    { header: "Date", value: (r) => safeToDate(r.date ?? r.createdAt) },
     { header: "Product Code", value: (r) => r.productCode },
     { header: "Product Name", value: (r) => r.productName },
     { header: "Seller", value: (r) => r.sellerName },

@@ -83,7 +83,7 @@ export default function SalesPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'createdAt', direction: 'desc' });
 
-  const salesOrder = useMemo(() => orderBy('createdAt', 'desc'), []);
+  const salesOrder = useMemo(() => orderBy('date', 'desc'), []);
   const { data: sales, loading: salesLoading } = useCompanyCollection<Sale>('sales', ...[salesOrder]);
   const { data: products } = useCompanyCollection<Product>('products');
   const { data: clients } = useCompanyCollection<Client>('clients');
@@ -474,7 +474,7 @@ export default function SalesPage() {
                   {filteredAndSortedSales.map((sale) => (
                     <TableRow key={sale.id}>
                       <TableCell>{(() => {
-                          const d = safeGetDate(sale.createdAt);
+                          const d = safeGetDate(sale.date);
                           return d ? format(d, 'yyyy-MM-dd HH:mm') : '';
                       })()}</TableCell>
                       <TableCell className="font-medium">{sale.productName}</TableCell>
@@ -525,4 +525,3 @@ export default function SalesPage() {
     </>
   );
 }
-

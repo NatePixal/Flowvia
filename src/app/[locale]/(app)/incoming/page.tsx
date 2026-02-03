@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -87,8 +88,10 @@ export default function IncomingPage() {
   const baseCurrency: Currency = (companyBaseCurrency ?? 'USD') as Currency;
   
   const formatDate = (log: IncomingProductLog) => {
-    const d = log.incomeDate ?? log.recordedAt ?? log.date;
+    // Priority: user-provided incomeDate, then fallback to legacy date field.
+    const d = log.incomeDate ?? log.date;
     if (!d) return 'N/A';
+    // Handle both Timestamp and string/Date
     const date = d instanceof Timestamp ? d.toDate() : new Date(d as any);
     return format(date, 'yyyy-MM-dd');
   };
@@ -253,8 +256,8 @@ export default function IncomingPage() {
           totalCostBaseMinor,
   
           incomeDate: Timestamp.fromDate(incoming.incomeDate),
+          date: Timestamp.fromDate(incoming.incomeDate), // FIX: Use user date for legacy field
           recordedAt: serverTimestamp(),
-          date: serverTimestamp(), // Keep legacy 'date' for old code paths
         });
   
         if (purchaseCurrency !== baseCurrency) {
@@ -497,6 +500,7 @@ export default function IncomingPage() {
           totalCostBaseMinor: newTotalBaseMinor,
 
           incomeDate: Timestamp.fromDate(newData.incomeDate),
+          date: Timestamp.fromDate(newData.incomeDate), // FIX: Update legacy date field as well
           editedAt: serverTimestamp(),
           editedBy: user?.uid,
           ...(oldLog.originalIncomeDate
