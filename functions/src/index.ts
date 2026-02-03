@@ -408,3 +408,4 @@ export const fixCurrentUserClaims = functions.https.onCall(
 export * from './money';
 export { recalculateSalesFinancials, deepRepairFinancials, auditFinancials, migrateProductsToMinorUnits, recalculateAllClientBalances } from './financials';
 export { auditIncomingDateTypes, createBackup, normalizeIncomingDates } from './maintenance';
+export { exportStatement } from './statement-builder';

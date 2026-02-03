@@ -6,6 +6,8 @@ import { useCompanyCollection } from "@/hooks/use-company-collection";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExcelImportDialog } from "@/components/data/excel-import-dialog";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { DateRange } from "react-day-picker";
 
 import { TPL_PRODUCTS, TPL_EXPENSES, TPL_CLIENT_LEDGER, TPL_EMPLOYEE_SALARY } from "@/lib/excel/templates";
 import { importProductsXlsx, importExpensesXlsx, importClientLedgerXlsx, importEmployeeSalaryXlsx } from "@/lib/excel/importers";
@@ -13,11 +15,16 @@ import { exportInventoryXlsx, exportExpensesXlsx, exportClientLedgerXlsx } from 
 
 import { Client, DailyExpense, Employee, Product, ClientLedgerEntry } from "@/lib/types";
 import { useTranslation } from "react-i18next";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function DataToolsPage() {
   const { t } = useTranslation();
-  const { firestore, companyId, userProfile } = useFirebase();
+  const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
+  const { toast } = useToast();
   const canWrite = userProfile?.role === 'admin' || userProfile?.role === 'developer';
+  const canExportStatement = canWrite;
 
   const { data: products, loading: productsLoading } = useCompanyCollection<Product>("products");
   const { data: expenses, loading: expensesLoading } = useCompanyCollection<DailyExpense>("dailyExpenses");
@@ -31,6 +38,11 @@ export default function DataToolsPage() {
 
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+
+  // Statement export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [statementDateRange, setStatementDateRange] = useState<DateRange | undefined>();
+  const [selectedStatementTarget, setSelectedStatementTarget] = useState<string>("");
 
   const { data: clientLedger, loading: clientLedgerLoading } = useCompanyCollection<ClientLedgerEntry>(
     selectedClientId ? `clients/${selectedClientId}/ledger` : ""
@@ -46,10 +58,44 @@ export default function DataToolsPage() {
     [employees, selectedEmployeeId]
   );
 
-  const salaryExpensesForEmployee = useMemo(() => {
-    if (!selectedEmployeeId) return [];
-    return (expenses || []).filter((e: any) => e.expenseType === "salary" && e.employee_id === selectedEmployeeId);
-  }, [expenses, selectedEmployeeId]);
+  const handleExportStatement = async (statementType: 'client' | 'supplier' | 'expenses') => {
+    if (!canExportStatement || !companyId || !statementDateRange?.from) return;
+
+    let targetId: string | undefined = undefined;
+    if (statementType === 'client') targetId = selectedStatementTarget;
+    if (statementType === 'supplier') targetId = selectedStatementTarget;
+    if (!targetId && (statementType === 'client' || statementType === 'supplier')) {
+        toast({ variant: 'destructive', title: 'Target Required', description: 'Please select a client or supplier.' });
+        return;
+    }
+
+    setIsExporting(true);
+    try {
+        const functions = getFunctions(firebaseApp, 'us-central1');
+        const exportStatementFn = httpsCallable(functions, 'exportStatement');
+        
+        const result: any = await exportStatementFn({
+            companyId,
+            statementType,
+            targetId,
+            dateFrom: statementDateRange.from.toISOString(),
+            dateTo: (statementDateRange.to || statementDateRange.from).toISOString(),
+        });
+        
+        if (result.data.success && result.data.downloadUrl) {
+            window.open(result.data.downloadUrl, '_blank');
+            toast({ title: 'Export Complete', description: 'Your statement is downloading.' });
+        } else {
+            throw new Error(result.data.error || 'Failed to generate statement.');
+        }
+
+    } catch (err: any) {
+        console.error('Statement export failed:', err);
+        toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
+    } finally {
+        setIsExporting(false);
+    }
+  };
 
   if (!firestore || !companyId) {
     return <div className="p-6">{t('misc.loading')}...</div>;
@@ -59,11 +105,54 @@ export default function DataToolsPage() {
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{t('dataTools.pageTitle')}</CardTitle>
-          <CardDescription>{t('dataTools.pageDescription')}</CardDescription>
+          <CardTitle>{"Data Export Engine"}</CardTitle>
+          <CardDescription>{"Generate bank-style accounting statements for auditing and analysis."}</CardDescription>
         </CardHeader>
+        <CardContent className="space-y-4">
+            <div className="space-y-2">
+                <Label>Date Range</Label>
+                <DateRangePicker date={statementDateRange} onDateChange={setStatementDateRange} />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label>Statement Type</Label>
+                    <Select value={selectedStatementTarget} onValueChange={setSelectedStatementTarget}>
+                        <SelectTrigger><SelectValue placeholder="Select a client..." /></SelectTrigger>
+                        <SelectContent>
+                            {(clients || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex items-end">
+                    <Button onClick={() => handleExportStatement('client')} disabled={isExporting || !statementDateRange?.from || !selectedStatementTarget}>
+                       {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                       Export Client Statement
+                    </Button>
+                </div>
+            </div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label>Expenses</Label>
+                    <p className="text-sm text-muted-foreground">Export all expenses within the date range.</p>
+                </div>
+                <div className="flex items-end">
+                    <Button onClick={() => handleExportStatement('expenses')} disabled={isExporting || !statementDateRange?.from}>
+                        {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Export Expense Statement
+                    </Button>
+                </div>
+            </div>
+        </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>{"Legacy Data Tools"}</CardTitle>
+          <CardDescription>{"Import and export data using simple XLSX files."}</CardDescription>
+        </CardHeader>
+      </Card>
+      
       {/* INVENTORY */}
       <Card>
         <CardHeader>
@@ -233,5 +322,3 @@ export default function DataToolsPage() {
     </div>
   );
 }
-
-    
