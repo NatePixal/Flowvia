@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   Timestamp,
   updateDoc,
+  addDoc,
 } from 'firebase/firestore';
 import { clampNonNegative, toMinor } from './money';
 import { ClientLedgerEntry, Supplier, SupplierLedgerEntry, Client, Currency } from './types';
@@ -38,6 +39,8 @@ export async function recomputeClientOutstanding(db: any, companyId: string, cli
     }
   });
 
+  // Do not clamp to zero. Allow negative (credit) balances.
+  
   // optional: drop zeros to keep client doc clean
   for (const [cur, val] of Object.entries(newBalances)) {
     if (Number(val) === 0) delete (newBalances as any)[cur];
@@ -224,4 +227,40 @@ export async function recordSupplierPaymentFIFO(
 
   // 3) Recompute AFTER commit so reads see the updated purchaseDueMinor values
   await recomputeSupplierBalance(db, companyId, supplierId);
+}
+
+export async function addClientLegacyDebtToLedger(
+  db: any,
+  companyId: string,
+  clientId: string,
+  amountMajor: number,
+  currency: Currency,
+  date: Date,
+  note?: string
+) {
+  if (!amountMajor || amountMajor <= 0) return;
+
+  const amountMinor = toMinor(amountMajor, currency);
+
+  const ledgerRef = collection(db, 'companies', companyId, 'clients', clientId, 'ledger');
+
+  const entry: Omit<ClientLedgerEntry, 'id'> = withCompanyId(companyId, {
+    clientId,
+    type: 'purchase',
+    currency,
+    totalMinor: amountMinor,
+    paidMinor: 0,
+    dueMinor: amountMinor,
+    note: note?.trim() || 'Legacy debt',
+    createdAt: Timestamp.fromDate(date ?? new Date()),
+    legacy: true,
+  });
+
+  await addDoc(ledgerRef, entry);
+
+  await updateDoc(doc(db, 'companies', companyId, 'clients', clientId), {
+    lastActivityAt: serverTimestamp(),
+  });
+
+  await recomputeClientOutstanding(db, companyId, clientId);
 }

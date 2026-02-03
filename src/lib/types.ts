@@ -182,6 +182,7 @@ export type ClientLedgerEntry = {
   // Metadata
   relatedSaleId?: string;
   note?: string;
+  legacy?: boolean;
   
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
