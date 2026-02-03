@@ -2,6 +2,6 @@
 export const CURRENCY_DECIMALS: Record<string, number> = {
   "USD": 2,
   "AED": 2,
-  "UZS": 2,
+  "UZS": 0,
   "CNY": 2
 };

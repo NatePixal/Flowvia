@@ -39,6 +39,13 @@ export default function DebugAuthPage() {
   const [isNormalizing, setIsNormalizing] = useState(false);
   const [normalizeResult, setNormalizeResult] = useState<any>(null);
 
+  // UZS Migration State
+  const [uzsDetectResult, setUzsDetectResult] = useState<any>(null);
+  const [isDetectingUzs, setIsDetectingUzs] = useState(false);
+  const [uzsMigrateResult, setUzsMigrateResult] = useState<any>(null);
+  const [isMigratingUzs, setIsMigratingUzs] = useState(false);
+
+
   const fetchToken = useCallback(async (forceRefresh = false) => {
     if (!user) return;
     setIsRefreshing(true);
@@ -162,40 +169,42 @@ export default function DebugAuthPage() {
     }
   };
 
-  const runSupplierMigration = async (dryRun: boolean) => {
-    if (!isDeveloper) {
-      toast({ variant: "destructive", title: "Permission Denied", description: "Only developers can run migrations."});
-      return;
-    }
-    if (!companyId) {
-      toast({ variant: "destructive", title: "Error", description: "Missing companyId."});
-      return;
-    }
-
-    setIsMigrating(true);
-    toast({ title: "Migration Started", description: `Running ${dryRun ? 'dry-run' : 'live'} migration... Check console for results.` });
-
+  const handleDetectUzsFormat = async () => {
+    if (!isDeveloper || !companyId) return;
+    setIsDetectingUzs(true);
+    setUzsDetectResult(null);
     try {
-        const functions = getFunctions(firebaseApp, 'us-central1');
-        const fn = httpsCallable(functions, 'migrateSupplierLedgerCurrencyFromIncoming');
-        
-        const res = await fn({
-            companyId,
-            dryRun,
-            defaultCurrency: 'UZS',
-            supplierLimit: 50,
-            perSupplierLedgerLimit: 200,
-        });
-
-        console.log('[MIGRATION RESULT]', res.data);
-        toast({ title: "Migration Finished", description: `Check console logs for details.` });
+      const functions = getFunctions(firebaseApp, 'us-central1');
+      const detectFn = httpsCallable(functions, 'detectUzsDataFormat');
+      const res: any = await detectFn({ companyId });
+      setUzsDetectResult(res.data);
+      toast({ title: "Detection Complete", description: `Result: ${res.data.case}` });
     } catch (err: any) {
-        console.error('[MIGRATION FAILED]', err);
-        toast({ variant: "destructive", title: "Migration Failed", description: err.message });
+      setUzsDetectResult({ case: 'ERROR', reason: err.message });
+      toast({ variant: 'destructive', title: "Detection Failed", description: err.message });
     } finally {
-        setIsMigrating(false);
+      setIsDetectingUzs(false);
     }
   };
+
+  const handleMigrateUzs = async (dryRun: boolean) => {
+    if (!isDeveloper || !companyId) return;
+    setIsMigratingUzs(true);
+    setUzsMigrateResult(null);
+    toast({ title: "UZS Migration Started", description: `Mode: ${dryRun ? 'Dry Run' : 'LIVE'}` });
+    try {
+      const functions = getFunctions(firebaseApp, 'us-central1');
+      const migrateFn = httpsCallable(functions, 'migrateUzsToZeroDecimals');
+      const res: any = await migrateFn({ companyId, dryRun });
+      setUzsMigrateResult(res.data);
+      toast({ title: "Migration Finished", description: "See results below." });
+    } catch (err: any) {
+      setUzsMigrateResult({ success: false, error: err.message });
+      toast({ variant: 'destructive', title: "Migration Failed", description: err.message });
+    } finally {
+      setIsMigratingUzs(false);
+    }
+  }
 
   if (isUserLoading || !sessionReady) {
     return (
@@ -273,6 +282,48 @@ export default function DebugAuthPage() {
             </CardHeader>
             <CardContent>
                 <div className="space-y-4">
+
+                    <div className="border-t pt-4 space-y-4">
+                        <h4 className="font-semibold">UZS Decimal Migration</h4>
+                        <p className="text-sm text-muted-foreground mb-2">Tools to fix historical UZS data stored with 2 decimals instead of 0.</p>
+                        
+                        <div>
+                          <Button onClick={handleDetectUzsFormat} disabled={isDetectingUzs}>
+                              {isDetectingUzs ? "Detecting..." : "1. Detect UZS Data Format"}
+                          </Button>
+                          {uzsDetectResult && (
+                              <Alert variant={uzsDetectResult.case === 'CASE B' ? 'destructive' : 'default'} className="mt-4">
+                                  <AlertTitle>Detection Result: {uzsDetectResult.case}</AlertTitle>
+                                  <AlertDescription>
+                                      <p>{uzsDetectResult.reason}</p>
+                                      {uzsDetectResult.samples?.length > 0 && (
+                                        <pre className="mt-2 text-xs whitespace-pre-wrap bg-secondary p-2 rounded-md">{JSON.stringify(uzsDetectResult.samples, null, 2)}</pre>
+                                      )}
+                                  </AlertDescription>
+                              </Alert>
+                          )}
+                        </div>
+
+                        <div>
+                            <p className="text-sm font-medium mb-2">2. Run Migration (Only if detection result is CASE B)</p>
+                            <div className="flex gap-2">
+                                <Button variant="outline" onClick={() => handleMigrateUzs(true)} disabled={isMigratingUzs}>
+                                    {isMigratingUzs ? "Migrating..." : "Run Dry Run"}
+                                </Button>
+                                <Button variant="destructive" onClick={() => handleMigrateUzs(false)} disabled={isMigratingUzs}>
+                                    {isMigratingUzs ? "Migrating..." : "Run LIVE Migration"}
+                                </Button>
+                            </div>
+                            {uzsMigrateResult && (
+                              <Alert variant={uzsMigrateResult.success ? 'default' : 'destructive'} className="mt-4">
+                                  <AlertTitle>{uzsMigrateResult.success ? 'Migration Complete' : 'Migration Failed'}</AlertTitle>
+                                  <AlertDescription>
+                                    <pre className="mt-2 text-xs whitespace-pre-wrap bg-secondary p-2 rounded-md">{JSON.stringify(uzsMigrateResult, null, 2)}</pre>
+                                  </AlertDescription>
+                              </Alert>
+                          )}
+                        </div>
+                    </div>
                     
                     <div className="border-t pt-4">
                         <h4 className="font-semibold">{t('createBackups')}</h4>
@@ -325,19 +376,6 @@ export default function DebugAuthPage() {
                             {isBackfilling ? t('backfilling') : t('runBackfillClaimsScript')}
                         </Button>
                     </div>
-
-                    <div className="border-t pt-4">
-                         <h4 className="font-semibold">Supplier Ledger Migration</h4>
-                         <p className="text-sm text-muted-foreground mb-4">Fixes historical supplier ledger entries with incorrect currency and minor-unit values.</p>
-                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => runSupplierMigration(true)} disabled={isMigrating}>
-                                Dev: Dry-run Supplier Migration
-                            </Button>
-                            <Button onClick={() => runSupplierMigration(false)} disabled={isMigrating}>
-                                Dev: Run Supplier Migration
-                            </Button>
-                        </div>
-                    </div>
                 </div>
             </CardContent>
         </Card>
@@ -345,5 +383,3 @@ export default function DebugAuthPage() {
     </div>
   );
 }
-
-    

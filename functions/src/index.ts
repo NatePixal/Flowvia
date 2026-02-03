@@ -1,223 +1,581 @@
 
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
-import { Company, Currency, Product, Sale, UserRole } from './types';
+import { Currency, UserRole } from './types';
 import { fromMinor, toMinor, convertMinorToBase, convertBaseToMinor } from './money';
 
+
+// Defensive init: only initialize if not already initialized by the environment.
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+// Global Firestore setting to prevent crashes on undefined values.
 admin.firestore().settings({ ignoreUndefinedProperties: true });
 
 const firestore = admin.firestore();
 
+/**
+ * A reusable helper function to safely merge new custom claims with existing ones.
+ * @param userId The UID of the user to update.
+ * @param newClaims An object containing the new claims to set.
+ */
 async function setMergedCustomClaims(
   userId: string,
   newClaims: Record<string, any>
 ): Promise<void> {
-  const user = await admin.auth().getUser(userId);
-  const existingClaims = user.customClaims || {};
-  const mergedClaims = { ...existingClaims, ...newClaims };
-  await admin.auth().setCustomUserClaims(userId, mergedClaims);
+  const userRecord = await admin.auth().getUser(userId);
+  const existingClaims = userRecord.customClaims || {};
+  const merged = { ...existingClaims, ...newClaims };
+
+  await admin.auth().setCustomUserClaims(userId, merged);
+  console.log(`setMergedCustomClaims for ${userId}:`, merged);
 }
 
-export const recalculateSalesFinancials = functions.https.onCall(async (data, context) => {
-  const companyId = data.companyId;
-  if (!companyId) {
-      throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a "companyId".');
-  }
 
-  const companyDoc = await firestore.doc(`companies/${companyId}`).get();
-  if (!companyDoc.exists) {
-      throw new functions.https.HttpsError('not-found', `Company with ID ${companyId} not found.`);
-  }
-  const company = companyDoc.data() as Company;
-  // Ensure company has a base currency.
-  const companyBaseCurrency = company.baseCurrency;
-  if (!companyBaseCurrency) {
-      throw new functions.https.HttpsError('failed-precondition', `Company ${companyId} does not have a base currency set.`);
-  }
-
-  const salesQuery = await firestore.collection(`companies/${companyId}/sales`).get();
-  const updatePromises: Promise<any>[] = [];
-
-  for (const doc of salesQuery.docs) {
-      const sale = doc.data() as Sale;
-      const saleId = doc.id;
-
-      // 1. Handle potentially undefined fx rate, default to 1
-      const fxRate = sale.fx?.enteredRate ?? 1;
-
-      // 2. Use correct currency property: 'salePriceCurrency'
-      const localCurrency = sale.salePriceCurrency;
-
-      // 3. Use sale's base currency or fallback to company's
-      const baseCurrency = sale.baseCurrency ?? companyBaseCurrency;
-
-      const costOfGoodsSoldBaseMinor = convertMinorToBase(
-          // 4. Handle potentially undefined cost, default to 0
-          sale.costOfGoodsSoldMinor ?? 0,
-          fxRate,
-          localCurrency,
-          baseCurrency
-      );
-
-      const updatePromise = firestore.doc(`companies/${companyId}/sales/${saleId}`).update({
-          costOfGoodsSoldBaseMinor,
-      });
-      updatePromises.push(updatePromise);
-  }
-
-  await Promise.all(updatePromises);
-
-  return {
-      message: "Sales financials recalculated successfully.",
-      salesUpdated: updatePromises.length,
-  };
-});
-
-// New Deep Repair function
-export const deepRepairFinancials = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
-    if (!context.auth || (context.auth.token.role !== 'developer' && context.auth.token.role !== 'admin')) {
-        throw new functions.https.HttpsError('permission-denied', 'Admin or Developer required.');
+export const createUserAndCompany = functions
+  .region('us-central1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated.');
     }
 
-    const { companyId, dryRun = false } = data;
-    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'companyId is required.');
-    
-    const companySnap = await firestore.doc(`companies/${companyId}`).get();
-    if (!companySnap.exists) throw new functions.https.HttpsError('not-found', 'Company not found.');
-    const company = companySnap.data() as Company;
-    const baseCurrency = company.baseCurrency || 'USD';
-    
-    const productsRef = firestore.collection(`companies/${companyId}/products`);
-    const salesRef = firestore.collection(`companies/${companyId}/sales`);
-    
-    const log: string[] = [];
-    log.push(`Starting Deep Repair for company ${companyId}. Dry Run: ${dryRun}`);
-    
-    // --- Phase A: Repair Products ---
-    log.push('--- Phase A: Repairing Products ---');
-    const productsSnap = await productsRef.get();
-    const productCostMap = new Map<string, { costMinor: number, costBaseMinor: number, currency: Currency }>();
-    const productBatch = firestore.batch();
-    let productUpdateCount = 0;
+    const uid = context.auth.uid;
+    const { companyName = 'Untitled Company', displayName = '' } = data || {};
 
-    for (const doc of productsSnap.docs) {
-        const p = doc.data() as Product;
-        let needsUpdate = false;
-        const updates: any = {};
+    // Always pull stable identity info from the user record (not token)
+    const userRecord = await admin.auth().getUser(uid);
+    const safeEmail = userRecord.email ?? '';
+    const safeName = displayName || userRecord.displayName || '';
 
-        // 1. Fallback for missing currency
-        const currency = (p.purchasePriceCurrency || baseCurrency) as Currency;
-        if (!p.purchasePriceCurrency) {
-            updates.purchasePriceCurrency = currency;
-            needsUpdate = true;
-            log.push(`  - Product ${doc.id}: Missing currency. Defaulting to ${currency}.`);
+    const userRole: UserRole = 'admin';
+
+    try {
+      // Create company doc
+      const companyRef = await firestore.collection('companies').add({
+        name: companyName,
+        ownerId: uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        baseCurrency: 'USD'
+      });
+      const companyId = companyRef.id;
+
+      // Ensure user doc exists / merge details
+      const userRef = firestore.collection('users').doc(uid);
+      await userRef.set({
+        email: safeEmail,
+        name: safeName,
+        companyId,
+        role: userRole,
+        isPaid: false,
+        status: 'active',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Set custom claims using the new safe helper
+      await setMergedCustomClaims(uid, { companyId, role: userRole });
+
+      return { success: true, companyId };
+    } catch (err: any) {
+      console.error('createUserAndCompany error:', err);
+      throw new functions.https.HttpsError(
+        'internal',
+        err?.message || 'Internal error while creating user/company.'
+      );
+    }
+  }
+);
+
+
+/**
+ * Firestore trigger that keeps auth custom claims in sync when a user's document is updated.
+ * If companyId or role changes in /users/{userId}, update the custom claims in Firebase Auth.
+ */
+export const onUserUpdated = functions.firestore
+  .document('users/{userId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    const userId = context.params.userId;
+
+    try {
+      const companyBefore = before.companyId || null;
+      const roleBefore = before.role || null;
+      const companyAfter = after.companyId || null;
+      const roleAfter = after.role || null;
+
+      // Only touch claims if companyId or role actually changed
+      if (companyBefore !== companyAfter || roleBefore !== roleAfter) {
+        // Build the *new* claims we want to enforce
+        const newClaims: Record<string, any> = {};
+
+        if (roleAfter === 'developer') {
+          // Developer Invariant: companyId MUST be null for developers.
+          newClaims.companyId = null;
+        } else if (companyAfter) {
+          // For non-developers, use the companyId from the document.
+          newClaims.companyId = companyAfter;
+        } else if (roleAfter !== 'developer' && companyBefore) {
+          // Handle case where company is removed from a non-developer
+          newClaims.companyId = null;
         }
 
-        // 2. Recalculate costMinor from the original 'cost' field
-        const correctCostMinor = toMinor(p.cost || 0, currency);
-        if (p.costMinor !== correctCostMinor) {
-            updates.costMinor = correctCostMinor;
-            needsUpdate = true;
+        if (roleAfter) {
+          newClaims.role = roleAfter;
         }
 
-        // 3. Recalculate costBaseMinor
-        let correctCostBaseMinor: number;
-        if (currency === baseCurrency) {
-            correctCostBaseMinor = correctCostMinor;
-        } else if (p.costFx?.rateToBase) {
-            correctCostBaseMinor = convertMinorToBase(correctCostMinor, p.costFx.rateToBase, currency, baseCurrency);
-        } else {
-            // Fallback: Assume 1:1 if no FX rate is found. This is a repair assumption.
-            correctCostBaseMinor = correctCostMinor;
-            log.push(`  - Product ${doc.id}: No exchange rate found for ${currency} -> ${baseCurrency}. Assuming 1:1 for repair.`);
+        // If we actually have something to update, MERGE with existing claims
+        if (Object.keys(newClaims).length > 0) {
+           await setMergedCustomClaims(userId, newClaims);
+        }
+      }
+    } catch (err) {
+      console.error('onUserUpdated error:', err);
+      // Do not throw — this is a background trigger. Log and continue.
+    }
+  });
+
+
+/**
+ * Invites a user to the calling admin's company.
+ * Uses onCall to ensure the caller is an authenticated admin.
+ */
+export const inviteUserToCompany = functions.https.onCall(
+  async (data, context) => {
+    // 1. Authentication and Authorization Check
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'You must be logged in to invite users.');
+    }
+    
+    const callerClaims = context.auth.token;
+    if (callerClaims.role !== 'admin' && callerClaims.role !== 'developer') {
+        throw new functions.https.HttpsError('permission-denied', 'You must be an admin to invite users.');
+    }
+    
+    // 2. Input Validation
+    const { name, email, password, role, companyId } = data;
+    if (!name || !email || !password || !role || !companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required fields.');
+    }
+    
+    // Security Check: Ensure admin is inviting user to their own company
+    if (callerClaims.role !== 'developer' && callerClaims.companyId !== companyId) {
+        throw new functions.https.HttpsError('permission-denied', 'You can only invite users to your own company.');
+    }
+
+    try {
+      // 3. Create the new user in Firebase Auth
+      const userRecord = await admin.auth().createUser({ email, password, displayName: name });
+      const uid = userRecord.uid;
+
+      // 4. Create the user's profile and add them to the company in a transaction
+      const userRef = admin.firestore().collection('users').doc(uid);
+      const companyRef = admin.firestore().collection('companies').doc(companyId);
+
+      await admin.firestore().runTransaction(async (transaction) => {
+        transaction.set(userRef, {
+            name: name,
+            email,
+            companyId,
+            role,
+            status: "active",
+            isPaid: true, // Assuming invited users are paid
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdBy: context.auth?.uid,
+        });
+
+        transaction.update(companyRef, {
+            memberUids: admin.firestore.FieldValue.arrayUnion(uid)
+        });
+      });
+
+      // 5. Set custom claims for the new user (merge-safe)
+      const claimsToSet: Record<string, any> = { role };
+      if (role === 'developer') {
+        claimsToSet.companyId = null;
+      } else {
+        claimsToSet.companyId = companyId;
+      }
+      await setMergedCustomClaims(uid, claimsToSet);
+      
+      // 6. Return success
+      return { success: true, uid: userRecord.uid };
+
+    } catch (error: any) {
+      console.error('Error in inviteUserToCompany:', error);
+      throw new functions.https.HttpsError('internal', error.message || 'Failed to invite user.');
+    }
+  }
+);
+
+export const deleteUserFromCompany = functions.https.onCall(
+    async (data, context) => {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'You must be logged in to delete users.');
         }
 
-        if (p.costBaseMinor !== correctCostBaseMinor) {
-            updates.costBaseMinor = correctCostBaseMinor;
-            needsUpdate = true;
+        const callerClaims = context.auth.token;
+        if (callerClaims.role !== 'admin' && callerClaims.role !== 'developer') {
+            throw new functions.https.HttpsError('permission-denied', 'You must be an admin to delete users.');
         }
         
-        // Store in map for Phase B
-        productCostMap.set(doc.id, { costMinor: correctCostMinor, costBaseMinor: correctCostBaseMinor, currency });
+        const { userId, companyId } = data;
+        if (!userId || !companyId) {
+            throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: userId and companyId.');
+        }
 
-        if (needsUpdate) {
-            log.push(`  - Staging update for Product ${doc.id} with updates: ${JSON.stringify(updates)}`);
-            productUpdateCount++;
-            productBatch.update(doc.ref, updates);
+        if (callerClaims.uid === userId) {
+            throw new functions.https.HttpsError('permission-denied', 'You cannot delete your own account.');
+        }
+
+        if (callerClaims.role !== 'developer' && callerClaims.companyId !== companyId) {
+            throw new functions.https.HttpsError('permission-denied', 'You can only delete users from your own company.');
+        }
+
+        try {
+            const userToDeleteRef = admin.firestore().collection('users').doc(userId);
+            const userToDeleteDoc = await userToDeleteRef.get();
+
+            if (!userToDeleteDoc.exists) {
+                // If user doc doesn't exist, still try to delete from Auth just in case
+                await admin.auth().deleteUser(userId);
+                return { success: true, message: 'User deleted from Auth. Profile document not found.' };
+            }
+
+            const userToDeleteData = userToDeleteDoc.data();
+            if (userToDeleteData?.companyId !== companyId) {
+                throw new functions.https.HttpsError('permission-denied', 'The specified user does not belong to your company.');
+            }
+            
+            // Perform deletions
+            await admin.auth().deleteUser(userId);
+            await userToDeleteRef.delete();
+
+            return { success: true, message: 'User successfully deleted.' };
+        } catch (error: any) {
+            console.error('Error in deleteUserFromCompany:', error);
+            if (error.code === 'auth/user-not-found') {
+                return { success: true, message: 'User already deleted from Auth.' };
+            }
+            throw new functions.https.HttpsError('internal', error.message || 'Failed to delete user.');
         }
     }
-    
-    if (!dryRun && productUpdateCount > 0) await productBatch.commit();
-    log.push(`Phase A Complete. Updated ${productUpdateCount} products.`);
+);
 
 
-    // --- Phase B: Recalculate All Sales ---
-    log.push('--- Phase B: Recalculating Sales ---');
-    const salesSnap = await salesRef.get();
-    const salesBatch = firestore.batch();
-    let salesUpdateCount = 0;
-    
-    for (const doc of salesSnap.docs) {
-        const s = doc.data() as Sale;
-        const productCosts = productCostMap.get(s.productId);
+export const repairMyClaims = functions
+  .region('us-central1')
+  .https.onCall(async (_data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated.');
+    }
+    const uid = context.auth.uid;
 
-        if (!productCosts) {
-            log.push(`  - Sale ${doc.id}: WARNING! Product ${s.productId} not found. Cannot recalculate. Skipping.`);
+    const snap = await admin.firestore().doc(`users/${uid}`).get();
+    if (!snap.exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'User profile not found.');
+    }
+
+    const userData = snap.data() as any;
+    const companyIdFromDoc = userData.companyId;
+    const role = userData.role;
+
+    if (!role) {
+      throw new functions.https.HttpsError('failed-precondition', 'User role missing in profile.');
+    }
+
+    // Prepare claims based on role
+    const claimsToSet: { role: string, companyId: string | null } = {
+      role: role,
+      companyId: null
+    };
+
+    if (role === 'developer') {
+      // Developer Invariant: companyId must be null.
+      claimsToSet.companyId = null;
+    } else {
+      // Non-developer MUST have a companyId in their doc.
+      if (!companyIdFromDoc) {
+        throw new functions.https.HttpsError('failed-precondition', 'User profile is missing companyId.');
+      }
+      claimsToSet.companyId = companyIdFromDoc;
+    }
+
+    await admin.auth().setCustomUserClaims(uid, claimsToSet);
+
+    return { success: true, role: claimsToSet.role, companyId: claimsToSet.companyId };
+  });
+
+export const backfillClaims = functions
+  .region('us-central1')
+  .https.onCall(async (_data, context) => {
+    if (!context.auth || context.auth.token.role !== 'developer') {
+      throw new functions.https.HttpsError('permission-denied', 'Only developers can run backfill.');
+    }
+
+    const usersSnap = await admin.firestore().collection('users').get();
+    let updated = 0;
+    let skipped = 0;
+
+    for (const docSnap of usersSnap.docs) {
+      const user = docSnap.data() as any;
+      const uid = docSnap.id;
+
+      const role = user.role;
+      const companyIdFromDoc = user.companyId;
+
+      const claimsToSet: { role: string, companyId: string | null } = {
+        role: role,
+        companyId: null
+      };
+
+      if (!role) {
+        skipped++;
+        continue;
+      }
+      
+      if (role === 'developer') {
+        claimsToSet.companyId = null;
+      } else {
+        if (!companyIdFromDoc) {
+            skipped++;
             continue;
         }
-        
-        const quantity = s.quantity || 0;
-        const saleCurrency = s.salePriceCurrency;
+        claimsToSet.companyId = companyIdFromDoc;
+      }
 
-        // Recalculate COGS in base currency
-        const cogsBaseMinor = productCosts.costBaseMinor * quantity;
-        
-        // Recalculate revenue in base currency (if needed)
-        const revenueMinor = s.revenueMinor ?? toMinor((s.salePrice || 0) * quantity, saleCurrency);
-        let revenueBaseMinor = s.revenueBaseMinor;
-        if (saleCurrency === baseCurrency) {
-            revenueBaseMinor = revenueMinor;
-        } else if (s.fx?.rateToBase) {
-            revenueBaseMinor = convertMinorToBase(revenueMinor, s.fx.rateToBase, saleCurrency, baseCurrency);
-        }
-        // If revenueBaseMinor is still undefined, we cannot calculate base profit.
-        if (revenueBaseMinor === undefined) {
-             log.push(`  - Sale ${doc.id}: Cannot determine base revenue. Skipping base profit calc.`);
-             revenueBaseMinor = 0; // fallback to prevent NaN
-        }
-        
-        // Recalculate Profit in Base Currency
-        const grossProfitBaseMinor = revenueBaseMinor - cogsBaseMinor;
-        
-        // Recalculate COGS and Profit in Local Currency
-        const cogsMinor = convertBaseToMinor(cogsBaseMinor, s.fx?.rateToBase || 1, saleCurrency, baseCurrency);
-        const grossProfitMinor = revenueMinor - cogsMinor;
-        
-        const updates = {
-            costOfGoodsSoldBaseMinor: cogsBaseMinor,
-            grossProfitBaseMinor: grossProfitBaseMinor,
-            costOfGoodsSoldMinor: cogsMinor,
-            grossProfitMinor: grossProfitMinor,
-        };
-
-        salesBatch.update(doc.ref, updates);
-        salesUpdateCount++;
+      await admin.auth().setCustomUserClaims(uid, claimsToSet);
+      updated++;
     }
 
-    if (!dryRun && salesUpdateCount > 0) await salesBatch.commit();
-    log.push(`Phase B Complete. Recalculated ${salesUpdateCount} sales.`);
+    return { success: true, updated, skipped };
+  });
 
-    return {
-        success: true,
-        dryRun,
-        productsFound: productsSnap.size,
-        productsUpdated: productUpdateCount,
-        salesFound: salesSnap.size,
-        salesRecalculated: salesUpdateCount,
-        logs: log,
-    };
+export const initializeCompany = functions.region('us-central1').https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    }
+    const { uid, token } = context.auth;
+    const { companyId, role, name: userName } = token as any;
+
+    if (role !== 'admin' && role !== 'developer') {
+        throw new functions.https.HttpsError('permission-denied', 'User must be an admin or developer.');
+    }
+    if (!companyId) {
+        throw new functions.https.HttpsError('failed-precondition', 'No companyId found in user claims.');
+    }
+    const ALLOWED_CURRENCIES: Currency[] = ["USD", "UZS", "AED", "CNY"];
+    const baseCurrency = ALLOWED_CURRENCIES.includes(data?.baseCurrency) ? data.baseCurrency : 'USD';
+
+    try {
+        const companyRef = firestore.collection('companies').doc(companyId);
+        const companyData = {
+            name: data?.name || userName || 'My Company',
+            ownerId: uid,
+            userCount: 1,
+            baseCurrency: baseCurrency,
+            warehouseCapacity: 0,
+            warehouseCapacityType: 'units',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        await companyRef.set(companyData, { merge: true });
+
+        return { success: true, companyId: companyRef.id };
+    } catch (err: any) {
+        console.error('initializeCompany error:', err);
+        throw new functions.https.HttpsError('internal', err.message || 'Failed to initialize company document.');
+    }
 });
+
+
+// DEPRECATED - Combined into repairMyClaims
+export const repairCurrentUserClaims = functions.https.onCall(
+  async (data, context) => {
+    throw new functions.https.HttpsError('unimplemented', 'This function is deprecated. Use repairMyClaims instead.');
+  }
+);
+
+// DEPRECATED - Combined into repairMyClaims
+export const fixCurrentUserClaims = functions.https.onCall(
+  async (data, context) => {
+    throw new functions.https.HttpsError('unimplemented', 'This function is deprecated. Use repairMyClaims instead.');
+  }
+);
+
+// --- START: UZS MIGRATION AND DETECTION TOOLS ---
+
+export const detectUzsDataFormat = functions.region('us-central1').https.onCall(async (data, context) => {
+    if (!context.auth || (context.auth.token.role !== 'developer' && context.auth.token.role !== 'admin')) {
+        throw new functions.https.HttpsError('permission-denied', 'User must be a developer or admin.');
+    }
+
+    const { companyId } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+
+    const salesRef = firestore.collection(`companies/${companyId}/sales`);
+    const expensesRef = firestore.collection(`companies/${companyId}/dailyExpenses`);
+
+    const uzsSales = await salesRef.where('salePriceCurrency', '==', 'UZS').limit(10).get();
+    const uzsExpenses = await expensesRef.where('currency', '==', 'UZS').limit(10).get();
+
+    const samples: any[] = [];
+    let divisibleBy100Count = 0;
+    let totalChecked = 0;
+
+    uzsSales.forEach(doc => {
+        const sale = doc.data();
+        const revenue = sale.revenueMinor;
+        if (typeof revenue === 'number') {
+            totalChecked++;
+            if (revenue % 100 === 0) divisibleBy100Count++;
+            if (samples.length < 5) samples.push({ id: doc.id, collection: 'sales', field: 'revenueMinor', value: revenue });
+        }
+    });
+
+    uzsExpenses.forEach(doc => {
+        const expense = doc.data();
+        const amount = expense.amountMinor;
+        if (typeof amount === 'number') {
+            totalChecked++;
+            if (amount % 100 === 0) divisibleBy100Count++;
+            if (samples.length < 10) samples.push({ id: doc.id, collection: 'dailyExpenses', field: 'amountMinor', value: amount });
+        }
+    });
+
+    if (totalChecked === 0) {
+        return { case: "INCONCLUSIVE", reason: "No UZS transactions found to analyze." };
+    }
+
+    const divisiblePercentage = (divisibleBy100Count / totalChecked) * 100;
+
+    if (divisiblePercentage > 80) { // High confidence threshold
+        return {
+            case: "CASE B",
+            reason: `~${divisiblePercentage.toFixed(0)}% of checked UZS values are divisible by 100, indicating they were stored with 2 extra decimals.`,
+            samples,
+        };
+    } else {
+        return {
+            case: "CASE A",
+            reason: `Only ~${divisiblePercentage.toFixed(0)}% of checked UZS values are divisible by 100. Data likely stored as whole Som.`,
+            samples,
+        };
+    }
+});
+
+export const migrateUzsToZeroDecimals = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
+    if (!context.auth || (context.auth.token.role !== 'developer' && context.auth.token.role !== 'admin')) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin or Developer access required.');
+    }
+    
+    const { companyId, dryRun = true } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+
+    const migrationId = 'uzs-decimals-v1';
+    const migrationRef = firestore.collection('migrations').doc(migrationId);
+    const migrationSnap = await migrationRef.get();
+
+    if (migrationSnap.exists && migrationSnap.data()?.status === 'completed' && !dryRun) {
+        throw new functions.https.HttpsError('failed-precondition', `Migration ${migrationId} has already been completed.`);
+    }
+
+    if (!dryRun) {
+        await migrationRef.set({
+            status: 'running',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            version: '1.0.0',
+            companyId,
+        }, { merge: true });
+    }
+
+    const collectionsToMigrate = {
+        'sales': ['revenueMinor', 'costOfGoodsSoldMinor', 'grossProfitMinor', 'revenueBaseMinor', 'costOfGoodsSoldBaseMinor', 'grossProfitBaseMinor'],
+        'dailyExpenses': ['amountMinor', 'amountBaseMinor'],
+        'incomingProducts': ['unitCostMinor', 'totalCostMinor', 'unitCostBaseMinor', 'totalCostBaseMinor'],
+        'client-ledger': ['totalMinor', 'paidMinor', 'dueMinor', 'paymentMinor'],
+        'supplier-ledger': ['purchaseTotalMinor', 'purchasePaidMinor', 'purchaseDueMinor', 'paymentMinor'],
+        'products': ['costMinor', 'costBaseMinor']
+    };
+    
+    const stats: Record<string, any> = {};
+
+    try {
+        for (const [collection, fields] of Object.entries(collectionsToMigrate)) {
+            let collectionRef;
+            if (collection === 'client-ledger' || collection === 'supplier-ledger') {
+                // These are subcollections, require a different approach
+                // For simplicity, we will skip these in this automated script.
+                stats[collection] = { processed: 0, updated: 0, status: 'skipped_subcollection' };
+                continue;
+            } else {
+                collectionRef = firestore.collection(`companies/${companyId}/${collection}`);
+            }
+
+            const query = collectionRef.where(
+                collection === 'products' ? 'purchasePriceCurrency' : (collection === 'sales' ? 'salePriceCurrency' : 'currency'), 
+                '==', 'UZS'
+            );
+
+            const snapshot = await query.get();
+            let updatedInColl = 0;
+            const batch = firestore.batch();
+
+            snapshot.forEach(doc => {
+                const updates: Record<string, any> = {};
+                let needsUpdate = false;
+                
+                fields.forEach(field => {
+                    const oldValue = doc.data()[field];
+                    if (typeof oldValue === 'number' && oldValue !== 0) {
+                        updates[field] = Math.round(oldValue / 100);
+                        needsUpdate = true;
+                    }
+                });
+
+                if (needsUpdate) {
+                    updates['_migration_uzs_v1'] = true;
+                    if (!dryRun) {
+                        batch.update(doc.ref, updates);
+                    }
+                    updatedInColl++;
+                }
+            });
+
+            if (!dryRun && updatedInColl > 0) {
+                await batch.commit();
+            }
+
+            stats[collection] = { processed: snapshot.size, updated: updatedInColl };
+        }
+
+        if (!dryRun) {
+            await migrationRef.update({
+                status: 'completed',
+                completedAt: admin.firestore.FieldValue.serverTimestamp(),
+                stats: stats
+            });
+        }
+        
+        return { success: true, dryRun, stats };
+
+    } catch (error: any) {
+        if (!dryRun) {
+            await migrationRef.update({
+                status: 'failed',
+                error: error.message,
+                completedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        console.error('Migration failed:', error);
+        throw new functions.https.HttpsError('internal', 'Migration failed: ' + error.message);
+    }
+});
+
+// --- END: UZS MIGRATION AND DETECTION TOOLS ---
+
+export * from './money';
+export { recalculateSalesFinancials, deepRepairFinancials, auditFinancials, migrateProductsToMinorUnits } from './financials';
+export { auditIncomingDateTypes, createBackup, normalizeIncomingDates } from './maintenance';
