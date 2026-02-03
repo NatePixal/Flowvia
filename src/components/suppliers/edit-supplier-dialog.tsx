@@ -31,12 +31,14 @@ export default function EditSupplierDialog({ open, onOpenChange, supplier, onUpd
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [factoryName, setFactoryName] = useState('');
 
   useEffect(() => {
     if (supplier) {
       setName(supplier.name);
       setEmail((supplier as any).email || '');
       setPhone((supplier as any).phone || '');
+      setFactoryName((supplier as any).factoryName || '');
     }
   }, [supplier]);
 
@@ -45,7 +47,7 @@ export default function EditSupplierDialog({ open, onOpenChange, supplier, onUpd
       toast({ variant: 'destructive', title: t('toast.error.missingFields'), description: t('suppliers.supplierNameIsRequired') });
       return;
     }
-    onUpdateSupplier(supplier.id!, { name, email, phone } as Partial<Supplier>);
+    onUpdateSupplier(supplier.id!, { name, email, phone, factoryName } as Partial<Supplier>);
   };
 
   return (
@@ -60,6 +62,10 @@ export default function EditSupplierDialog({ open, onOpenChange, supplier, onUpd
             <div className="space-y-2">
               <Label htmlFor="name">{t('suppliers.supplierName')} <span className="text-destructive">*</span></Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="factoryName">Factory Name</Label>
+              <Input id="factoryName" value={factoryName} onChange={(e) => setFactoryName(e.target.value)} />
             </div>
              <div className="space-y-2">
               <Label htmlFor="email">{t('suppliers.email')}</Label>

@@ -30,6 +30,7 @@ export default function AddSupplierDialog({ open, onOpenChange, onAddSupplier }:
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [factoryName, setFactoryName] = useState('');
 
   const handleSubmit = () => {
     if (!name.trim()) {
@@ -40,10 +41,11 @@ export default function AddSupplierDialog({ open, onOpenChange, onAddSupplier }:
       });
       return;
     }
-    onAddSupplier({ name, email, phone } as Omit<Supplier, 'id' | 'companyId'>);
+    onAddSupplier({ name, email, phone, factoryName } as Omit<Supplier, 'id' | 'companyId'>);
     setName('');
     setEmail('');
     setPhone('');
+    setFactoryName('');
     onOpenChange(false);
   };
 
@@ -59,6 +61,10 @@ export default function AddSupplierDialog({ open, onOpenChange, onAddSupplier }:
             <div className="space-y-2">
               <Label htmlFor="supplierName">{t('suppliers.supplierName')} <span className="text-destructive">*</span></Label>
               <Input id="supplierName" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="factoryName">Factory Name</Label>
+              <Input id="factoryName" value={factoryName} onChange={(e) => setFactoryName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">{t('suppliers.email')}</Label>

@@ -257,6 +257,10 @@
         "name": {
           "type": "string",
           "description": "Name of the supplier."
+        },
+        "factoryName": {
+          "type": "string",
+          "description": "Name of the factory associated with the supplier."
         }
       },
       "required": [

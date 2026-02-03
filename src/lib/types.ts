@@ -196,6 +196,7 @@ export type Supplier = {
   name: string;
   email?: string;
   phone?: string;
+  factoryName?: string;
   createdAt?: FirestoreTs;
   // Derived fields
   balanceDueByCurrency?: { [key in Currency]?: number };
