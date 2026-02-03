@@ -23,6 +23,8 @@ import { recordClientPaymentFIFO, recomputeClientOutstanding } from '@/lib/ledge
 import { companyCollection, companyDoc, withCompanyId } from '@/lib/firestore-path';
 import { formatMoneyMinor } from '@/lib/money';
 import { FancyCard } from '@/components/ui/fancy-card';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 export default function ClientLoansPage() {
   const { t } = useTranslation();
@@ -186,6 +188,7 @@ export default function ClientLoansPage() {
                 </TableHeader>
                 <TableBody>
                   {clients.map((client) => {
+                    const hasLoan = Object.values(client.outstandingByCurrency || {}).some(v => v > 0);
                     const clientOutstanding = Object.entries(client.outstandingByCurrency || {})
                         .filter(([_, value]) => value && value > 0)
                         .map(([currency, value]) => formatMoneyMinor(value, currency as Currency))
@@ -196,7 +199,18 @@ export default function ClientLoansPage() {
                         <TableCell className="font-medium">{client.name}</TableCell>
                         <TableCell>{client.phoneNumber || 'N/A'}</TableCell>
                         <TableCell>{client.location || 'N/A'}</TableCell>
-                        <TableCell className="font-medium">{clientOutstanding || formatMoneyMinor(0, baseCurrency)}</TableCell>
+                        <TableCell className="p-2">
+                           <div className={cn("flex h-full items-center justify-start gap-2 rounded-md p-2", hasLoan && "bg-destructive/10")}>
+                              <span className={cn("font-medium", hasLoan ? "text-destructive" : "text-muted-foreground")}>
+                                {clientOutstanding || formatMoneyMinor(0, baseCurrency)}
+                              </span>
+                              {hasLoan ? (
+                                <Badge variant="destructive">Has loan</Badge>
+                              ) : (
+                                <Badge variant="outline">Settled</Badge>
+                              )}
+                           </div>
+                        </TableCell>
                         <TableCell className="text-center">
                             <DropdownMenu>
                             <DropdownMenuTrigger asChild>

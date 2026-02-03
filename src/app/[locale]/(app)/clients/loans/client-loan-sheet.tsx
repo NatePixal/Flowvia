@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo } from 'react';
@@ -8,9 +9,11 @@ import type { Client, ClientLedgerEntry, Currency } from '@/lib/types';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { useCompanyCollection } from '@/hooks/use-company-collection';
 import { formatMoneyMinor } from '@/lib/money';
+import { useCurrency } from '@/lib/currency-provider';
 
 function formatDateSafe(v: any): string {
   try {
@@ -36,6 +39,7 @@ interface Props {
 
 export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
   const { t } = useTranslation();
+  const { baseCurrency } = useCurrency();
 
   // Ledger is stored under: companies/{companyId}/clients/{clientId}/ledger
   const ledgerOrder = useMemo(() => orderBy('createdAt', 'desc'), []);
@@ -67,6 +71,8 @@ export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
 
     return totals;
   }, [client.outstandingByCurrency, ledger]);
+  
+  const hasLoan = Object.values(totalsByCurrency).some(v => v > 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -79,22 +85,31 @@ export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
         </SheetHeader>
 
         <div className="mt-4 space-y-4">
-          <Card>
+          <Card className={cn(hasLoan ? "border-destructive/50 bg-destructive/5" : "border-border")}>
             <CardHeader>
               <CardTitle className="text-base">{t('clients.outstandingDebt')}</CardTitle>
             </CardHeader>
             <CardContent className="text-sm">
-              {Object.keys(totalsByCurrency).length === 0 ? (
-                <div className="text-muted-foreground">—</div>
-              ) : (
-                <div className="flex flex-wrap gap-3">
-                  {Object.entries(totalsByCurrency).map(([cur, amt]) => (
-                    <div key={cur} className="font-semibold">
-                      {formatMoneyMinor(Number(amt || 0), cur as Currency)}
-                    </div>
-                  ))}
+              <div className="flex items-start justify-between">
+                <div>
+                {!hasLoan ? (
+                  <div className="font-semibold text-muted-foreground">{formatMoneyMinor(0, baseCurrency)}</div>
+                ) : (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {Object.entries(totalsByCurrency).map(([cur, amt]) => (
+                      <div key={cur} className="font-semibold text-destructive">
+                        {formatMoneyMinor(Number(amt || 0), cur as Currency)}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 </div>
-              )}
+                {hasLoan ? (
+                  <Badge variant="destructive">Has loan</Badge>
+                ) : (
+                  <Badge variant="outline">Settled</Badge>
+                )}
+              </div>
             </CardContent>
           </Card>
 
