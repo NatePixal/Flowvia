@@ -10,7 +10,7 @@ import { PlusCircle, MoreHorizontal, FileDown, ListFilter, Edit } from 'lucide-r
 import { useTranslation } from 'react-i18next';
 import { useFirebase } from '@/firebase/provider';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, runTransaction, Timestamp, getDocs, getDoc, query, where, deleteField, orderBy, FieldValue, writeBatch } from 'firebase/firestore';
-import type { Sale, Product, Client, Seller, ClientLedgerEntry, FxSnapshot, Currency } from '@/lib/types';
+import type { Sale, Product, Client, Seller, ClientLedgerEntry, FxSnapshot, Currency, UserProfile } from '@/lib/types';
 import AddSaleDialog from '@/components/sales/add-sale-dialog';
 import DeleteSaleDialog from '@/components/sales/delete-sale-dialog';
 import EditSaleDialog from '@/components/sales/edit-sale-dialog';
@@ -26,6 +26,7 @@ import { recomputeClientOutstanding } from '@/lib/ledger-recompute';
 import { Input } from '@/components/ui/input';
 import DateRangePicker from '@/components/ui/date-range-picker';
 import { DateRange } from 'react-day-picker';
+import { useCompanyUsers } from '@/hooks/use-company-users';
 
 type DateInput = string | Date | Timestamp | FieldValue | null | undefined;
 
@@ -87,6 +88,7 @@ export default function SalesPage() {
   const { data: products } = useCompanyCollection<Product>('products');
   const { data: clients } = useCompanyCollection<Client>('clients');
   const { data: sellers } = useCompanyCollection<Seller>('sellers');
+  const { users: companyUsers } = useCompanyUsers();
   const canExport = hasPermission(userProfile, 'sales', 'export');
   const canDelete = hasPermission(userProfile, 'sales', 'delete'); // Admin or Developer
 
@@ -204,6 +206,7 @@ export default function SalesPage() {
                 sellerName: sellers.find(s => s.id === sellerId)?.name || 'N/A',
                 baseCurrency: companyBaseCurrency,
                 createdAt: serverTimestamp(),
+                createdBy: user?.uid,
                 isDeleted: false,
                 revenueMinor, costOfGoodsSoldMinor, grossProfitMinor,
                 revenueBaseMinor, costOfGoodsSoldBaseMinor, grossProfitBaseMinor,
@@ -367,6 +370,8 @@ export default function SalesPage() {
       return;
     }
     
+    const usersById = new Map(companyUsers.map((u) => [u.id, u]));
+
     exportToXlsx(
       `sales_${companyId}_${format(new Date(), "yyyy-MM-dd")}.xlsx`,
       t('sales.pageTitle'),
@@ -377,6 +382,7 @@ export default function SalesPage() {
         { header: t('sales.productName'), value: (r) => r.productName },
         { header: t('sales.clientName'), value: (r) => r.clientName },
         { header: t('sales.seller'), value: (r) => r.sellerName },
+        { header: "Created By", value: (r) => usersById.get(r.createdBy!)?.name ?? r.createdBy ?? "" },
         { header: t('sales.paymentType'), value: (r) => r.paymentType },
         { header: t('sales.quantity'), value: (r) => r.quantity },
         { header: t('sales.total'), value: (r) => fromMinor(r.revenueMinor ?? 0, r.salePriceCurrency as Currency) },
@@ -519,3 +525,4 @@ export default function SalesPage() {
     </>
   );
 }
+

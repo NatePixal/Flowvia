@@ -116,6 +116,7 @@ export type Sale = {
   isDeleted?: boolean;
   deletedAt?: FirestoreTs;
   deletedBy?: string;
+  createdBy?: string;
   
   // Base currency of the company at the time of sale
   baseCurrency?: Currency;
@@ -358,3 +359,4 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
+

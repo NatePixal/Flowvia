@@ -8,7 +8,7 @@ import { PlusCircle, MoreHorizontal, FileDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useFirebase } from '@/firebase/provider';
 import { addDoc, serverTimestamp, Timestamp, doc, updateDoc, deleteDoc, FieldValue } from 'firebase/firestore';
-import type { DailyExpense, Seller, Employee, Currency, FxSnapshot } from '@/lib/types';
+import type { DailyExpense, Seller, Employee, Currency, FxSnapshot, UserProfile } from '@/lib/types';
 import AddExpenseDialog from '@/components/expenses/add-expense-dialog';
 import EditExpenseDialog from '@/components/expenses/edit-expense-dialog';
 import DeleteExpenseDialog from '@/components/expenses/delete-expense-dialog';
@@ -24,6 +24,7 @@ import { companyCollection, companyDoc, withCompanyId } from '@/lib/firestore-pa
 import { formatMoneyMinor, toMinor, convertMinorToBase } from '@/lib/money';
 import { exportToXlsx } from '@/lib/export/xlsx-export';
 import { FancyCard } from '@/components/ui/fancy-card';
+import { useCompanyUsers } from '@/hooks/use-company-users';
 
 type DateInput = string | Date | Timestamp | FieldValue | null | undefined;
 
@@ -63,6 +64,7 @@ export default function ExpensesPage() {
   const { data: expenses, loading: expensesLoading } = useCompanyCollection<DailyExpense>('dailyExpenses');
   const { data: sellers } = useCompanyCollection<Seller>('sellers');
   const { data: employees } = useCompanyCollection<Employee>('employees');
+  const { users: companyUsers } = useCompanyUsers();
 
   const filteredExpenses = useMemo(() => {
     return (expenses || []).filter(expense => {
@@ -207,6 +209,7 @@ export default function ExpensesPage() {
   };
   
   const handleExport = () => {
+    const usersById = new Map(companyUsers.map((u) => [u.id, u]));
     exportToXlsx(
       `expenses_${companyId}_${format(new Date(), "yyyy-MM-dd")}.xlsx`,
       t('expenses.pageTitle'),
@@ -222,7 +225,7 @@ export default function ExpensesPage() {
         { header: t('expenses.currency'), value: r => r.currency ?? "" },
         { header: t('expenses.amountBaseMinor'), value: r => r.amountBaseMinor ?? "" },
         { header: t('expenses.description'), value: r => getSalaryDescription(r) ?? "" },
-        { header: "CreatedBy", value: r => r.createdBy ?? "" },
+        { header: "Created By", value: r => usersById.get(r.createdBy!)?.name ?? r.createdBy ?? "" },
       ]
     );
   };
