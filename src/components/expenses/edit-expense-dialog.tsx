@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,16 +15,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DailyExpense, Currency, Seller, Employee } from '@/lib/types';
+import { DailyExpense, Currency, Seller, Employee, FxSnapshot } from '@/lib/types';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, serverTimestamp } from 'firebase/firestore';
+import { useFirebase } from '@/firebase';
+import { normalizeRateToBase } from '@/lib/money';
 
 
 interface EditExpenseDialogProps {
@@ -40,16 +41,20 @@ interface EditExpenseDialogProps {
 export default function EditExpenseDialog({ open, onOpenChange, expense, onUpdateExpense, sellers, employees }: EditExpenseDialogProps) {
   const { t, ready } = useTranslation();
   const { toast } = useToast();
+  const { companyBaseCurrency } = useFirebase();
 
   const [expenseType, setExpenseType] = useState<DailyExpense['expenseType'] | ''>('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency | ''>('');
+  const [currency, setCurrency] = useState<Currency>('USD');
   const [date, setDate] = useState<Date | undefined>();
   
   const [salaryRecipientType, setSalaryRecipientType] = useState<'seller' | 'employee' | ''>('');
   const [sellerId, setSellerId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
+
+  const [fxRate, setFxRate] = useState('');
+  const showFxInput = useMemo(() => currency && companyBaseCurrency && currency !== companyBaseCurrency, [currency, companyBaseCurrency]);
 
   useEffect(() => {
     if (expense) {
@@ -57,6 +62,7 @@ export default function EditExpenseDialog({ open, onOpenChange, expense, onUpdat
         setDescription(expense.description);
         setAmount(String(expense.amount));
         setCurrency(expense.currency);
+        setFxRate(String(expense.fx?.enteredRate || ''));
         
         const d = (() => {
             const v = expense.date;
@@ -88,30 +94,35 @@ export default function EditExpenseDialog({ open, onOpenChange, expense, onUpdat
       toast({ variant: 'destructive', title: t('toast.error.missingFields'), description: t('toast.error.pleaseFillAllRequiredFields') });
       return;
     }
-    if (expenseType === 'others' && !description) {
-        toast({ variant: 'destructive', title: t('toast.error.descriptionRequiredForOthers') });
-        return;
+    if (showFxInput && !fxRate) {
+      toast({ variant: 'destructive', title: t('toast.error.missingFields'), description: t('expenses.exchangeRateIsRequiredForThisCurrency') });
+      return;
     }
-     if (expenseType === 'salary' && salaryRecipientType === 'seller' && !sellerId) {
-        toast({ variant: 'destructive', title: t('toast.error.recipientIsRequiredForSalary') });
-        return;
-    }
-    if (expenseType === 'salary' && salaryRecipientType === 'employee' && !employeeId) {
-        toast({ variant: 'destructive', title: t('toast.error.recipientIsRequiredForSalary') });
-        return;
-    }
-
+    
     const expenseData: Partial<DailyExpense> = {
       expenseType,
       description,
       amount: parseFloat(amount),
       currency,
-      date,
-      paid_to_seller_id: salaryRecipientType === 'seller' ? sellerId : '',
-      paid_to_seller_name: salaryRecipientType === 'seller' ? sellers.find(s => s.id === sellerId)?.name : '',
-      employee_id: salaryRecipientType === 'employee' ? employeeId : '',
-      employee_name: salaryRecipientType === 'employee' ? employees.find(e => e.id === employeeId)?.employee_name : '',
+      date: Timestamp.fromDate(date),
+      paid_to_seller_id: salaryRecipientType === 'seller' ? sellerId : undefined,
+      paid_to_seller_name: salaryRecipientType === 'seller' ? sellers.find(s => s.id === sellerId)?.name : undefined,
+      employee_id: salaryRecipientType === 'employee' ? employeeId : undefined,
+      employee_name: salaryRecipientType === 'employee' ? employees.find(e => e.id === employeeId)?.employee_name : undefined,
     };
+    
+    if (showFxInput && companyBaseCurrency) {
+      const enteredRate = parseFloat(fxRate);
+      const fxPair = `${companyBaseCurrency}->${currency}`;
+      expenseData.fx = {
+        rateToBase: normalizeRateToBase(enteredRate, fxPair, currency, companyBaseCurrency),
+        enteredRate,
+        enteredPair: fxPair,
+        capturedAt: serverTimestamp(),
+      } as FxSnapshot;
+    } else {
+      expenseData.fx = undefined; // Clear FX if not needed
+    }
     
     onUpdateExpense(expense.id!, expenseData);
   };
@@ -207,6 +218,24 @@ export default function EditExpenseDialog({ open, onOpenChange, expense, onUpdat
                   </Select>
               </div>
             </div>
+
+            {showFxInput && (
+              <div className="space-y-2 rounded-md border border-yellow-500/50 bg-yellow-500/5 p-3">
+                  <Label htmlFor="fxRate">
+                    {t('expenses.exchangeRate')} ({companyBaseCurrency} &rarr; {currency})
+                    <span className="text-destructive"> *</span>
+                  </Label>
+                  <Input 
+                    id="fxRate" 
+                    type="number" 
+                    value={fxRate} 
+                    onChange={(e) => setFxRate(e.target.value)} 
+                    placeholder={`${t('expenses.howMany')} ${currency} ${t('expenses.for')} 1 ${companyBaseCurrency}`}
+                  />
+                   <p className="text-xs text-muted-foreground flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5"/>{t('expenses.thisRateWillBeLockedForTheTransaction')}</p>
+              </div>
+            )}
+            
             <div className="space-y-2">
               <Label htmlFor="date">{t('expenses.date')} <span className="text-destructive">*</span></Label>
               <Popover>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -78,7 +77,7 @@ export default function AddExpenseDialog({ open, onOpenChange, onAddExpense, sel
     
     if (showFxInput) {
       const enteredRate = parseFloat(fxRate);
-      const fxPair = `${currency}->${companyBaseCurrency}`;
+      const fxPair = `${companyBaseCurrency}->${currency}`;
       expenseData.fx = {
         rateToBase: normalizeRateToBase(enteredRate, fxPair, currency, companyBaseCurrency!),
         enteredRate,
@@ -195,7 +194,7 @@ export default function AddExpenseDialog({ open, onOpenChange, onAddExpense, sel
             {showFxInput && (
               <div className="space-y-2 rounded-md border border-yellow-500/50 bg-yellow-500/5 p-3">
                   <Label htmlFor="fxRate">
-                    {t('expenses.exchangeRate')} ({currency} &rarr; {companyBaseCurrency})
+                    {t('expenses.exchangeRate')} ({companyBaseCurrency} &rarr; {currency})
                     <span className="text-destructive"> *</span>
                   </Label>
                   <Input 
@@ -203,7 +202,7 @@ export default function AddExpenseDialog({ open, onOpenChange, onAddExpense, sel
                     type="number" 
                     value={fxRate} 
                     onChange={(e) => setFxRate(e.target.value)} 
-                    placeholder={`${t('expenses.howMany')} ${companyBaseCurrency} ${t('expenses.for')} 1 ${currency}`}
+                    placeholder={`${t('expenses.howMany')} ${currency} ${t('expenses.for')} 1 ${companyBaseCurrency}`}
                   />
                    <p className="text-xs text-muted-foreground flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5"/>{t('expenses.thisRateWillBeLockedForTheTransaction')}</p>
               </div>
