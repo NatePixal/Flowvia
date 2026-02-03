@@ -4,9 +4,6 @@
 // Cache-busting comment to trigger server restart
 const nextConfig = {
   output: 'standalone',
-  experimental: {
-    serverComponentsExternalPackages: ['firebase-admin'],
-  },
   images: {
     remotePatterns: [
       {

@@ -44,7 +44,6 @@
     "embla-carousel": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "firebase": "^10.14.1",
-    "firebase-admin": "^12.7.0",
     "framer-motion": "^11.2.12",
     "i18next": "^23.7.19",
     "i18next-browser-languagedetector": "^8.0.0",
