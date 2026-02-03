@@ -19,32 +19,32 @@ export async function recomputeClientOutstanding(db: any, companyId: string, cli
   const clientRef = doc(db, 'companies', companyId, 'clients', clientId);
   const ledgerRef = collection(db, 'companies', companyId, 'clients', clientId, 'ledger');
 
+  // Correctly fetch ALL ledger entries
   const ledgerSnap = await getDocs(query(ledgerRef));
 
-  const balanceByCurrency: { [key in Currency]?: number } = {};
+  const newBalances: { [key in Currency]?: number } = {};
 
+  // Process all entries to calculate the true net balance
   ledgerSnap.forEach(doc => {
     const entry = doc.data() as ClientLedgerEntry;
-    const currency = entry.currency;
-    if (!currency) return;
+    if (!entry.currency) return; // Skip entries without a currency
 
-    if (balanceByCurrency[currency] === undefined) {
-      balanceByCurrency[currency] = 0;
+    // Initialize balance for the currency if it's the first time we see it
+    if (newBalances[entry.currency] === undefined) {
+      newBalances[entry.currency] = 0;
     }
 
     if (entry.type === 'purchase') {
-      balanceByCurrency[currency]! += (entry.totalMinor ?? 0);
+      newBalances[entry.currency]! += (entry.totalMinor ?? 0);
     } else if (entry.type === 'payment') {
-      balanceByCurrency[currency]! -= (entry.paymentMinor ?? 0);
+      // Correctly subtract payments
+      newBalances[entry.currency]! -= (entry.paymentMinor ?? 0);
     }
   });
 
-  // Note: openPurchasesCount is not updated here to keep the change minimal,
-  // as the primary goal is to fix the balance calculation. The old logic for it was tied
-  // to summing positive due amounts, which is what's being corrected.
+  // Now, newBalances will contain a signed value (positive for debt, negative for credit)
   await updateDoc(clientRef, {
-    companyId,
-    outstandingByCurrency: balanceByCurrency,
+    outstandingByCurrency: newBalances,
     lastActivityAt: serverTimestamp(),
   });
 }
