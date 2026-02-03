@@ -188,11 +188,9 @@ export default function ClientLoansPage() {
                 </TableHeader>
                 <TableBody>
                   {clients.map((client) => {
-                    const hasLoan = Object.values(client.outstandingByCurrency || {}).some(v => v > 0);
-                    const clientOutstanding = Object.entries(client.outstandingByCurrency || {})
-                        .filter(([_, value]) => value && value > 0)
-                        .map(([currency, value]) => formatMoneyMinor(value, currency as Currency))
-                        .join(' / ');
+                    const balanceItems = Object.entries(client.outstandingByCurrency || {})
+                        .map(([currency, value]) => ({ currency: currency as Currency, value: value || 0 }))
+                        .filter(item => item.value !== 0);
 
                     return (
                         <TableRow key={client.id}>
@@ -200,16 +198,28 @@ export default function ClientLoansPage() {
                         <TableCell>{client.phoneNumber || 'N/A'}</TableCell>
                         <TableCell>{client.location || 'N/A'}</TableCell>
                         <TableCell className="p-2">
-                           <div className={cn("flex h-full items-center justify-start gap-2 rounded-md p-2", hasLoan && "bg-destructive/10")}>
-                              <span className={cn("font-medium", hasLoan ? "text-destructive" : "text-muted-foreground")}>
-                                {clientOutstanding || formatMoneyMinor(0, baseCurrency)}
-                              </span>
-                              {hasLoan ? (
-                                <Badge variant="destructive">Has loan</Badge>
-                              ) : (
-                                <Badge variant="outline">Settled</Badge>
-                              )}
-                           </div>
+                           <div className="space-y-1">
+                                {balanceItems.length > 0 ? (
+                                    balanceItems.map(({ currency, value }) => {
+                                        const isDebt = value > 0;
+                                        const isCredit = value < 0;
+                                        return (
+                                            <div key={currency} className={cn("flex h-full items-center justify-between gap-2 rounded-md p-2 text-sm", isDebt && "bg-destructive/10", isCredit && "bg-success/10")}>
+                                                <span className={cn("font-medium", isDebt && "text-destructive", isCredit && "text-success")}>
+                                                    {formatMoneyMinor(Math.abs(value), currency)}
+                                                </span>
+                                                {isDebt && <Badge variant="destructive">{t('clients.hasLoan')}</Badge>}
+                                                {isCredit && <Badge variant="success">{t('clients.overpaid')}</Badge>}
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="flex h-full items-center justify-between gap-2 rounded-md p-2 text-sm">
+                                        <span className="font-medium text-muted-foreground">{formatMoneyMinor(0, baseCurrency)}</span>
+                                        <Badge variant="outline">{t('clients.settled')}</Badge>
+                                    </div>
+                                )}
+                            </div>
                         </TableCell>
                         <TableCell className="text-center">
                             <DropdownMenu>

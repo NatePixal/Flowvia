@@ -48,31 +48,11 @@ export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
     ledgerOrder
   );
 
-
-  const totalsByCurrency = useMemo(() => {
-    const totals: Partial<Record<Currency, number>> = {};
-
-    // Prefer the precomputed outstandingByCurrency if present
-    const fromClient = client.outstandingByCurrency || {};
-    for (const [cur, amt] of Object.entries(fromClient)) {
-      const n = Number(amt);
-      if (Number.isFinite(n) && n > 0) totals[cur as Currency] = (totals[cur as Currency] || 0) + n;
-    }
-
-    // If not present, derive it from ledger purchases
-    if (Object.keys(totals).length === 0 && Array.isArray(ledger)) {
-      for (const e of ledger) {
-        if (e.type !== 'purchase') continue;
-        const cur = e.currency as Currency;
-        const due = Number(e.dueMinor || 0);
-        if (Number.isFinite(due) && due > 0) totals[cur] = (totals[cur] || 0) + due;
-      }
-    }
-
-    return totals;
-  }, [client.outstandingByCurrency, ledger]);
-  
-  const hasLoan = Object.values(totalsByCurrency).some(v => v > 0);
+  const balanceItems = useMemo(() => {
+    return Object.entries(client.outstandingByCurrency || {})
+      .map(([currency, value]) => ({ currency: currency as Currency, value: value || 0 }))
+      .filter(item => item.value !== 0);
+  }, [client.outstandingByCurrency]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -85,31 +65,36 @@ export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
         </SheetHeader>
 
         <div className="mt-4 space-y-4">
-          <Card className={cn(hasLoan ? "border-destructive/50 bg-destructive/5" : "border-border")}>
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base">{t('clients.outstandingDebt')}</CardTitle>
+              <CardTitle className="text-base">{t('clients.balanceSummary')}</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                {!hasLoan ? (
-                  <div className="font-semibold text-muted-foreground">{formatMoneyMinor(0, baseCurrency)}</div>
-                ) : (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    {Object.entries(totalsByCurrency).map(([cur, amt]) => (
-                      <div key={cur} className="font-semibold text-destructive">
-                        {formatMoneyMinor(Number(amt || 0), cur as Currency)}
+            <CardContent className="text-sm space-y-2">
+              {balanceItems.length > 0 ? (
+                balanceItems.map(({ currency, value }) => {
+                  const isDebt = value > 0;
+                  const isCredit = value < 0;
+                  return (
+                    <div key={currency} className={cn("flex items-center justify-between rounded-lg border p-3", isDebt ? "border-destructive/50 bg-destructive/5" : isCredit ? "border-success/50 bg-success/5" : "border-border")}>
+                      <div>
+                        <div className={cn("font-semibold", isDebt ? "text-destructive" : isCredit ? "text-success" : "text-muted-foreground")}>
+                          {formatMoneyMinor(Math.abs(value), currency)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{currency}</div>
                       </div>
-                    ))}
+                      {isDebt && <Badge variant="destructive">{t('clients.hasLoan')}</Badge>}
+                      {isCredit && <Badge variant="success">{t('clients.overpaid')}</Badge>}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <div className="font-semibold text-muted-foreground">{formatMoneyMinor(0, baseCurrency)}</div>
                   </div>
-                )}
+                  <Badge variant="outline">{t('clients.settled')}</Badge>
                 </div>
-                {hasLoan ? (
-                  <Badge variant="destructive">Has loan</Badge>
-                ) : (
-                  <Badge variant="outline">Settled</Badge>
-                )}
-              </div>
+              )}
             </CardContent>
           </Card>
 

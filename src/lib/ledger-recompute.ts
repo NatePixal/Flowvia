@@ -1,4 +1,4 @@
-
+'use client';
 import {
   doc,
   getDocs,
@@ -19,29 +19,32 @@ export async function recomputeClientOutstanding(db: any, companyId: string, cli
   const clientRef = doc(db, 'companies', companyId, 'clients', clientId);
   const ledgerRef = collection(db, 'companies', companyId, 'clients', clientId, 'ledger');
 
-  const purchasesSnap = await getDocs(query(ledgerRef, where('type', '==', 'purchase')));
-  const purchases = purchasesSnap.docs.map((d) => d.data() as ClientLedgerEntry);
+  const ledgerSnap = await getDocs(query(ledgerRef));
 
-  const outstandingByCurrency: { [key in Currency]?: number } = {};
-  let openPurchasesCount = 0;
+  const balanceByCurrency: { [key in Currency]?: number } = {};
 
-  for (const p of purchases) {
-    const total = Number(p.totalMinor ?? 0);
-    const paid = Number(p.paidMinor ?? 0);
-    const due = Number(p.dueMinor ?? clampNonNegative(total - paid));
-    if (!p.currency) continue;
+  ledgerSnap.forEach(doc => {
+    const entry = doc.data() as ClientLedgerEntry;
+    const currency = entry.currency;
+    if (!currency) return;
 
-    if (due > 0) {
-      outstandingByCurrency[p.currency] = (outstandingByCurrency[p.currency] || 0) + due;
-      openPurchasesCount++;
+    if (balanceByCurrency[currency] === undefined) {
+      balanceByCurrency[currency] = 0;
     }
-  }
 
+    if (entry.type === 'purchase') {
+      balanceByCurrency[currency]! += (entry.totalMinor ?? 0);
+    } else if (entry.type === 'payment') {
+      balanceByCurrency[currency]! -= (entry.paymentMinor ?? 0);
+    }
+  });
+
+  // Note: openPurchasesCount is not updated here to keep the change minimal,
+  // as the primary goal is to fix the balance calculation. The old logic for it was tied
+  // to summing positive due amounts, which is what's being corrected.
   await updateDoc(clientRef, {
-    // ensures legacy docs missing companyId become rule-compliant
     companyId,
-    outstandingByCurrency,
-    openPurchasesCount,
+    outstandingByCurrency: balanceByCurrency,
     lastActivityAt: serverTimestamp(),
   });
 }

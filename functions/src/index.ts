@@ -1,7 +1,7 @@
 
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
-import { Currency, UserRole } from './types';
+import { Currency, UserRole, Client, ClientLedgerEntry } from './types';
 import { fromMinor, toMinor, convertMinorToBase, convertBaseToMinor } from './money';
 
 
@@ -577,5 +577,5 @@ export const migrateUzsToZeroDecimals = functions.region('us-central1').runWith(
 // --- END: UZS MIGRATION AND DETECTION TOOLS ---
 
 export * from './money';
-export { recalculateSalesFinancials, deepRepairFinancials, auditFinancials, migrateProductsToMinorUnits } from './financials';
+export { recalculateSalesFinancials, deepRepairFinancials, auditFinancials, migrateProductsToMinorUnits, recalculateAllClientBalances } from './financials';
 export { auditIncomingDateTypes, createBackup, normalizeIncomingDates } from './maintenance';
