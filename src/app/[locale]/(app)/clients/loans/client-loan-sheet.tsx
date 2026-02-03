@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { orderBy, query } from 'firebase/firestore';
+import { orderBy } from 'firebase/firestore';
 import type { Client, ClientLedgerEntry, Currency } from '@/lib/types';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
@@ -75,9 +75,9 @@ export default function ClientLoanSheet({ open, onOpenChange, client }: Props) {
                   const isDebt = value > 0;
                   const isCredit = value < 0;
                   return (
-                    <div key={currency} className={cn("flex items-center justify-between rounded-lg border p-3", isDebt ? "border-destructive/50 bg-destructive/5" : isCredit ? "border-success/50 bg-success/5" : "border-border")}>
+                    <div key={currency} className={cn("flex items-center justify-between rounded-lg border p-3", isDebt ? "border-destructive/50 bg-destructive/5" : isCredit ? "border-green-500/50 bg-green-500/5" : "border-border")}>
                       <div>
-                        <div className={cn("font-semibold", isDebt ? "text-destructive" : isCredit ? "text-success" : "text-muted-foreground")}>
+                        <div className={cn("font-semibold", isDebt ? "text-destructive" : isCredit ? "text-green-600" : "text-muted-foreground")}>
                           {formatMoneyMinor(Math.abs(value), currency)}
                         </div>
                         <div className="text-xs text-muted-foreground">{currency}</div>

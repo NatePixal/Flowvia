@@ -1,3 +1,4 @@
+
 'use client';
 import {
   doc,
@@ -19,30 +20,29 @@ export async function recomputeClientOutstanding(db: any, companyId: string, cli
   const clientRef = doc(db, 'companies', companyId, 'clients', clientId);
   const ledgerRef = collection(db, 'companies', companyId, 'clients', clientId, 'ledger');
 
-  // Correctly fetch ALL ledger entries
-  const ledgerSnap = await getDocs(query(ledgerRef));
+  const ledgerSnap = await getDocs(ledgerRef);
 
   const newBalances: { [key in Currency]?: number } = {};
 
-  // Process all entries to calculate the true net balance
-  ledgerSnap.forEach(doc => {
-    const entry = doc.data() as ClientLedgerEntry;
-    if (!entry.currency) return; // Skip entries without a currency
+  ledgerSnap.forEach((d) => {
+    const entry = d.data() as ClientLedgerEntry;
+    if (!entry.currency) return;
 
-    // Initialize balance for the currency if it's the first time we see it
-    if (newBalances[entry.currency] === undefined) {
-      newBalances[entry.currency] = 0;
-    }
+    if (newBalances[entry.currency] === undefined) newBalances[entry.currency] = 0;
 
     if (entry.type === 'purchase') {
-      newBalances[entry.currency]! += (entry.totalMinor ?? 0);
+      newBalances[entry.currency]! += Number(entry.totalMinor ?? 0);
     } else if (entry.type === 'payment') {
-      // Correctly subtract payments
-      newBalances[entry.currency]! -= (entry.paymentMinor ?? 0);
+      const payMinor = Number(entry.paymentMinor ?? entry.totalMinor ?? 0);
+      newBalances[entry.currency]! -= payMinor;
     }
   });
 
-  // Now, newBalances will contain a signed value (positive for debt, negative for credit)
+  // optional: drop zeros to keep client doc clean
+  for (const [cur, val] of Object.entries(newBalances)) {
+    if (Number(val) === 0) delete (newBalances as any)[cur];
+  }
+
   await updateDoc(clientRef, {
     outstandingByCurrency: newBalances,
     lastActivityAt: serverTimestamp(),

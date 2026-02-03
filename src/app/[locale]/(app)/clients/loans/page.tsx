@@ -19,7 +19,7 @@ import ClientLoanSheet from './client-loan-sheet';
 import { useToast } from '@/hooks/use-toast';
 import { useCompanyCollection } from '@/hooks/use-company-collection';
 import { useCurrency } from '@/lib/currency-provider';
-import { recordClientPaymentFIFO, recomputeClientOutstanding } from '@/lib/ledger-recompute';
+import { recordClientPaymentFIFO } from '@/lib/ledger-recompute';
 import { companyCollection, companyDoc, withCompanyId } from '@/lib/firestore-path';
 import { formatMoneyMinor } from '@/lib/money';
 import { FancyCard } from '@/components/ui/fancy-card';
@@ -204,8 +204,8 @@ export default function ClientLoansPage() {
                                         const isDebt = value > 0;
                                         const isCredit = value < 0;
                                         return (
-                                            <div key={currency} className={cn("flex h-full items-center justify-between gap-2 rounded-md p-2 text-sm", isDebt && "bg-destructive/10", isCredit && "bg-success/10")}>
-                                                <span className={cn("font-medium", isDebt && "text-destructive", isCredit && "text-success")}>
+                                            <div key={currency} className={cn("flex h-full items-center justify-between gap-2 rounded-md p-2 text-sm", isDebt && "bg-destructive/10", isCredit && "bg-green-500/10")}>
+                                                <span className={cn("font-medium", isDebt && "text-destructive", isCredit && "text-green-600")}>
                                                     {formatMoneyMinor(Math.abs(value), currency)}
                                                 </span>
                                                 {isDebt && <Badge variant="destructive">{t('clients.hasLoan')}</Badge>}
