@@ -1,6 +1,7 @@
 // functions/src/exports/index.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
+import { randomUUID } from 'crypto';
 
 import { buildStatementWorkbook } from './statement-engine';
 import { buildClientStatement } from './builders/client';
@@ -36,19 +37,35 @@ async function saveWorkbookAndSign(params: {
 }): Promise<{ downloadUrl: string; filePath: string }> {
   const file = bucket.file(params.filePath);
 
+  // Add a Firebase Storage download token as a reliable fallback URL method
+  const token = randomUUID();
+
   await file.save(params.buffer, {
     resumable: false,
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    metadata: { cacheControl: 'private, max-age=0, no-transform' },
+    metadata: {
+      cacheControl: 'private, max-age=0, no-transform',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
   });
 
-  const [downloadUrl] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
-    expires: Date.now() + 15 * 60 * 1000, // 15 min
-  });
-
-  return { downloadUrl, filePath: params.filePath };
+  // Try signed URL first (short-lived)
+  try {
+    const [signed] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 15 * 60 * 1000,
+    });
+    return { downloadUrl: signed, filePath: params.filePath };
+  } catch (e) {
+    // Fallback: token URL (works even if signing is blocked)
+    const bucketName = bucket.name;
+    const encodedPath = encodeURIComponent(params.filePath);
+    const tokenUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${token}`;
+    return { downloadUrl: tokenUrl, filePath: params.filePath };
+  }
 }
 
 /**

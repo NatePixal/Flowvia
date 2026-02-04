@@ -14,77 +14,91 @@ function toDate(v: any): Date | null {
 
 export async function buildProductMovementStatement(params: {
   companyId: string;
-  productId: string; // This is the PRODUCT DOC ID
+  productId: string;     // PRODUCT DOC ID (what UI sends)
   from: Date;
   to: Date;
-  baseCurrency: Currency; // Monetary, but ignored for this report
+  baseCurrency: Currency; // ignored for QTY, but kept for interface consistency
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
   const { companyId, productId, from, to } = params;
 
-  // 1. Get product details (name, productCode) from the productId (docId)
+  // 1) Load product to get productCode
   const productRef = db.doc(`companies/${companyId}/products/${productId}`);
   const productSnap = await productRef.get();
-  if (!productSnap.exists) {
-    throw new Error(`Product with ID ${productId} not found.`);
-  }
-  const productData = productSnap.data() as any;
-  const productName = productData.name || productId;
-  const productCode = productData.productCode; // The code used in other collections
+  const productData = (productSnap.data() as any) || {};
 
+  const productCode: string = productData.productCode || productId; // fallback
+  const productName: string = productData.name || productCode;
+
+  // 2) Read movements for THIS product
   const incomingRef = db.collection(`companies/${companyId}/incomingProducts`);
   const salesRef = db.collection(`companies/${companyId}/sales`);
 
-  const fromTs = admin.firestore.Timestamp.fromDate(from);
-  const toTs = admin.firestore.Timestamp.fromDate(to);
-
-  // 2. Get all relevant movements using correct identifiers
-  const incomingQuery = incomingRef.where('productCode', '==', productCode);
-  const salesQuery = salesRef.where('productId', '==', productId); // sales use doc ID
-  
   const [incomingSnap, salesSnap] = await Promise.all([
-    incomingQuery.get(),
-    salesQuery.get(),
+    incomingRef.where('productCode', '==', productCode).get(),
+    salesRef.where('productId', '==', productId).get(),
   ]);
 
-  const allMovements = [
-    ...incomingSnap.docs.map(d => ({ type: 'IN', doc: d.data(), id: d.id, date: toDate(d.data().businessDate ?? d.data().incomeDate ?? d.data().date) })),
-    ...salesSnap.docs.map(d => ({ type: 'OUT', doc: d.data(), id: d.id, date: toDate(d.data().businessDate ?? d.data().date) })),
-  ].filter(m => m.date && m.date >= from && m.date <= to)
-   .sort((a, b) => a.date!.getTime() - b.date!.getTime());
+  // 3) Normalize movements + dates
+  const incomingMovements = incomingSnap.docs.map((d) => {
+    const doc = d.data() as any;
+    const date = toDate(doc.businessDate ?? doc.incomeDate ?? doc.date);
+    const qty = Number(doc.quantity ?? 0);
+    return {
+      kind: 'IN' as const,
+      id: d.id,
+      doc,
+      date,
+      qty,
+    };
+  });
 
-  // 3. Opening Qty calculation using businessDate
-  const beforeIncomingSnap = await incomingQuery.where('businessDate', '<', fromTs).get();
-  const beforeSalesSnap = await salesQuery.where('businessDate', '<', fromTs).get();
-  
+  const salesMovements = salesSnap.docs.map((d) => {
+    const doc = d.data() as any;
+    const date = toDate(doc.businessDate ?? doc.date ?? doc.createdAt);
+    const qty = Number(doc.quantity ?? 0);
+    return {
+      kind: 'OUT' as const,
+      id: d.id,
+      doc,
+      date,
+      qty,
+    };
+  });
+
+  // 4) Compute openingQty LOCALLY (no extra Firestore queries => no index crash)
   let openingQty = 0;
-  beforeIncomingSnap.forEach(d => { openingQty += Number(d.data().quantity ?? 0); });
-  beforeSalesSnap.forEach(d => { openingQty -= Number(d.data().quantity ?? 0); });
+  for (const m of incomingMovements) {
+    if (m.date && m.date < from) openingQty += m.qty;
+  }
+  for (const m of salesMovements) {
+    if (m.date && m.date < from) openingQty -= m.qty;
+  }
+
+  // 5) Build rows in range
+  const inRange = [...incomingMovements, ...salesMovements]
+    .filter((m) => m.date && m.date >= from && m.date <= to)
+    .sort((a, b) => a.date!.getTime() - b.date!.getTime());
 
   let runningQty = openingQty;
   const rows: StatementRow[] = [];
 
-  for (const movement of allMovements) {
-    let qtyIn = 0;
-    let qtyOut = 0;
-    let description = '';
+  for (const m of inRange) {
+    const qtyIn = m.kind === 'IN' ? m.qty : 0;
+    const qtyOut = m.kind === 'OUT' ? m.qty : 0;
 
-    if (movement.type === 'IN') {
-      qtyIn = Number(movement.doc.quantity ?? 0);
-      description = `Incoming from ${movement.doc.supplier || 'N/A'}`;
-    } else { // OUT
-      qtyOut = Number(movement.doc.quantity ?? 0);
-      description = `Sale to ${movement.doc.clientName || 'N/A'}`;
-    }
+    const description =
+      m.kind === 'IN'
+        ? `Incoming from ${m.doc.supplier || 'N/A'}`
+        : `Sale to ${m.doc.clientName || 'N/A'}`;
 
     runningQty = runningQty + qtyIn - qtyOut;
 
-    // This is a quantity statement, not financial. Debit/Credit represent quantity.
     rows.push({
-      businessDate: movement.date!,
-      description: description,
-      reference: movement.id,
-      type: movement.type === 'IN' ? 'Incoming' : 'Sale',
-      currency: 'QTY',
+      businessDate: m.date!,
+      description,
+      reference: m.id,
+      type: m.kind === 'IN' ? 'Incoming' : 'Sale',
+      currency: 'QTY' as any, // your types should include QTY; keep as any if not
       debitOrig: qtyIn,
       creditOrig: qtyOut,
       debitBase: qtyIn,
@@ -99,14 +113,19 @@ export async function buildProductMovementStatement(params: {
     periodFrom: from,
     periodTo: to,
     entityLabel: `Product: ${productName} (${productCode})`,
-    baseCurrency: 'QTY', // Correctly set to QTY
+    baseCurrency: 'QTY' as any,
     openingBase: openingQty,
-    totalDebitBase: rows.reduce((s, r) => s + r.debitBase, 0),
-    totalCreditBase: rows.reduce((s, r) => s + r.creditBase, 0),
+    totalDebitBase: rows.reduce((s, r) => s + (r.debitBase || 0), 0),
+    totalCreditBase: rows.reduce((s, r) => s + (r.creditBase || 0), 0),
     closingBase: runningQty,
     txCount: rows.length,
     warnings: [],
-    totalsByCurrencyOrig: { 'QTY': { debit: rows.reduce((s, r) => s + r.debitOrig, 0), credit: rows.reduce((s, r) => s + r.creditOrig, 0) } },
+    totalsByCurrencyOrig: {
+      QTY: {
+        debit: rows.reduce((s, r) => s + (r.debitOrig || 0), 0),
+        credit: rows.reduce((s, r) => s + (r.creditOrig || 0), 0),
+      },
+    } as any,
   };
 
   return { summary, rows };
