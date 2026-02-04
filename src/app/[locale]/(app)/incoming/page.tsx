@@ -286,6 +286,7 @@ export default function IncomingPage() {
             note: `Purchase of ${incomingQty} x ${incoming.productCode}`,
             relatedIncomingLogId: newLogRef.id,
             createdAt: serverTimestamp(),
+            businessDate: Timestamp.fromDate(incoming.incomeDate),
           };
   
           transaction.set(doc(supplierLedgerRef), withCompanyId(companyId, ledgerEntry));
@@ -550,6 +551,7 @@ export default function IncomingPage() {
               note: `Purchase of ${newQty} x ${oldLog.productCode}`,
               relatedIncomingLogId: logId,
               createdAt: serverTimestamp(),
+              businessDate: Timestamp.fromDate(newData.incomeDate),
             };
   
             transaction.set(doc(newLedgerColl), withCompanyId(companyId, entry));
@@ -567,6 +569,7 @@ export default function IncomingPage() {
               transaction.update(oldLedgerDocRef, {
                 purchaseTotalMinor: newTotalMinor,
                 purchaseDueMinor: due,
+                businessDate: Timestamp.fromDate(newData.incomeDate),
               });
             } else {
               const ledgerColl = companyCollection(
@@ -586,6 +589,7 @@ export default function IncomingPage() {
                 note: `Purchase of ${newQty} x ${oldLog.productCode}`,
                 relatedIncomingLogId: logId,
                 createdAt: serverTimestamp(),
+                businessDate: Timestamp.fromDate(newData.incomeDate),
               };
   
               transaction.set(doc(ledgerColl), withCompanyId(companyId, entry));
@@ -695,7 +699,7 @@ export default function IncomingPage() {
         const newTotalBaseMinor = subtractMinor(currentTotalBaseMinor, logTotalBaseMinor);
 
         const newAvgCostMinor = newQty > 0 ? Math.round(newTotalMinor / newQty) : 0;
-        const newAvgCostBaseMinor = newQty > 0 ? Math.round(newTotalBaseMinor / newQty) : 0;
+        const newAvgCostBaseMinor = newQty > 0 ? Math.round(newProductTotalBaseMinor / newQty) : 0;
 
         transaction.update(productRef, {
           quantity: newQty,

@@ -22,7 +22,7 @@ async function buildExpensesStatement(params) {
     // Adjust collection name if needed (dailyExpenses vs expenses)
     const ref = db.collection(`companies/${companyId}/dailyExpenses`);
     // BUSINESS date field required:
-    const DATE_FIELD = 'date';
+    const DATE_FIELD = 'businessDate';
     const fromTs = admin.firestore.Timestamp.fromDate(from);
     const toTs = admin.firestore.Timestamp.fromDate(to);
     const rangeSnap = await ref

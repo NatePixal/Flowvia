@@ -113,6 +113,7 @@ export default function ExpensesPage() {
           amount,
           currency,
           date: Timestamp.fromDate(date),
+          businessDate: Timestamp.fromDate(date),
           paid_to_seller_id: paid_to_seller_id || '',
           employee_id: employee_id || '',
           paid_to_seller_name: paid_to_seller_id ? recipientName : '',
@@ -148,6 +149,9 @@ export default function ExpensesPage() {
       const expenseRef = companyDoc(firestore, companyId, `dailyExpenses/${expenseId}`);
       
       const payload: Partial<DailyExpense> = { ...expenseData };
+      if (payload.date) {
+        payload.businessDate = payload.date;
+      }
       if (expenseData.amount && expenseData.currency) {
         payload.amountMinor = toMinor(expenseData.amount, expenseData.currency);
         if (expenseData.currency === companyBaseCurrency) {
