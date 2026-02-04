@@ -5,18 +5,13 @@ exports.fromMinor = fromMinor;
 exports.clampNonNegative = clampNonNegative;
 exports.convertMinorToBase = convertMinorToBase;
 exports.convertBaseToMinor = convertBaseToMinor;
+const currency_config_1 = require("./currency-config");
 /**
  * A map specifying the number of decimal places for each currency's minor unit.
  * E.g., USD is 100 cents in a dollar, so it has 2 decimal places.
  * JPY has no minor unit, so it has 0.
  */
-const SUBUNIT_MAP = {
-    AED: 2,
-    CNY: 2,
-    USD: 2,
-    UZS: 2,
-    // Add other currencies here as needed
-};
+const SUBUNIT_MAP = currency_config_1.CURRENCY_DECIMALS;
 /**
  * Converts a major currency unit (e.g., dollars as a float/number) to a minor unit (e.g., cents as an integer).
  * @param amount The amount in major units.
