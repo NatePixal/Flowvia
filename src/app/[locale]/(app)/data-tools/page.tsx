@@ -45,80 +45,91 @@ export default function DataToolsPage() {
     if (!canExportStatement || !companyId || !statementDateRange?.from) return;
 
     setExportingType(statementType);
-    
-    const fromISO = statementDateRange.from.toISOString().slice(0, 10);
-    const toISO = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
-    const baseCurrency = userProfile?.currency || 'USD';
-    const locale = i18n.language;
-    
-    const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO, locale };
 
-    if (statementType === 'client') {
-        if (!selectedClient) { toast({ variant: 'destructive', title: 'Client not selected' }); setExportingType(null); return; }
+    try {
+      const fromISO = statementDateRange.from.toISOString().slice(0, 10);
+      const toISO = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
+      const baseCurrency = userProfile?.currency || 'USD';
+
+      // 1. Build payload based on type
+      const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO };
+
+      if (statementType === 'client') {
+        if (!selectedClient) { throw new Error('Client not selected'); }
         payload.targetId = selectedClient;
         payload.baseCurrency = baseCurrency;
 
-    } else if (statementType === 'supplier') {
-        if (!selectedSupplier) { toast({ variant: 'destructive', title: 'Supplier not selected' }); setExportingType(null); return; }
+      } else if (statementType === 'supplier') {
+        if (!selectedSupplier) { throw new Error('Supplier not selected'); }
+        const supplier = suppliers.find(s => s.id === selectedSupplier);
+        if (!supplier) throw new Error('Supplier details not found');
         payload.targetId = selectedSupplier;
-        payload.supplierName = suppliers.find(s => s.id === selectedSupplier)?.name;
+        payload.supplierName = supplier.name;
         payload.baseCurrency = baseCurrency;
 
-    } else if (statementType === 'expenses') {
-         payload.baseCurrency = baseCurrency;
+      } else if (statementType === 'expenses') {
+        payload.baseCurrency = baseCurrency;
 
-    } else if (statementType === 'productMovement') {
-        if (!selectedProduct) { toast({ variant: 'destructive', title: 'Product not selected' }); setExportingType(null); return; }
+      } else if (statementType === 'productMovement') {
+        if (!selectedProduct) { throw new Error('Product not selected'); }
         const product = products.find(p => p.id === selectedProduct);
-        if (!product) { toast({ variant: 'destructive', title: 'Product details not found' }); setExportingType(null); return; }
+        if (!product) throw new Error('Product details not found');
         payload.targetId = selectedProduct;
         payload.productCode = product.productCode;
         payload.baseCurrency = baseCurrency;
-
-    } else if (statementType === 'stockReport') {
+        
+      } else if (statementType === 'stockReport') {
         payload.stockMode = stockMode;
         payload.baseCurrency = baseCurrency;
-    }
+      }
+      
+      // Add locale for i18n in reports
+      payload.locale = i18n.language;
 
-    const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatement");
+      // 2. Call the function
+      const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatement");
+      const res: any = await fn(payload);
+      
+      // 3. Handle response and download
+      const { base64, filename, mimeType, warnings } = res.data || {};
 
-    try {
-        const res: any = await fn(payload);
-        const { base64, filename, mimeType, warnings } = res.data || {};
+      if (!base64) {
+        // This will catch backend-thrown errors which are in err.message, or just a malformed success response
+        throw new Error(res.data?.message || "Invalid response from server: base64 data is missing.");
+      }
 
-        if (warnings && warnings.length > 0) {
-          toast({ variant: 'destructive', title: 'Export Warnings', description: warnings.join('\n') });
-        }
+      if (warnings && warnings.length > 0) {
+        toast({ variant: 'destructive', title: 'Export Warnings', description: warnings.join('\n') });
+      }
 
-        if (!base64) {
-          throw new Error("Invalid response from server: base64 data is missing.");
-        }
+      const byteChars = atob(base64);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) {
+        byteNumbers[i] = byteChars.charCodeAt(i);
+      }
 
-        const byteChars = atob(base64);
-        const byteNumbers = new Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) {
-          byteNumbers[i] = byteChars.charCodeAt(i);
-        }
+      const blob = new Blob(
+        [new Uint8Array(byteNumbers)],
+        { type: mimeType || "application/octet-stream" }
+      );
 
-        const blob = new Blob(
-          [new Uint8Array(byteNumbers)],
-          { type: mimeType || "application/octet-stream" }
-        );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "export.xlsx";
+      document.body.appendChild(a); // For Firefox compatibility
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ title: 'Export Complete', description: 'Your file has started downloading.' });
 
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename || "export.xlsx";
-        document.body.appendChild(a); // Required for Firefox
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast({ title: 'Export Complete', description: 'Your file has started downloading.' });
     } catch (err: any) {
-        console.error("Statement export failed:", err);
-        toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
+      console.error("Statement export failed:", err);
+      // This will now show the real backend error.
+      toast({ variant: 'destructive', title: 'Export Failed', description: err.message || err.details || 'An unknown error occurred.' });
     } finally {
-        setExportingType(null);
+      setExportingType(null);
     }
   };
 
