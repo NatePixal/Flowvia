@@ -20,25 +20,23 @@ import { add } from "date-fns";
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
 type StockMode = "range" | "asOfToday" | "both";
 
-async function downloadExcel(firebaseApp: any, callableName: string, payload: any) {
-    const functions = getFunctions(firebaseApp, 'us-central1');
-    const fn = httpsCallable(functions, callableName);
-    const res: any = await fn(payload);
-    
-    const url = res?.data?.downloadUrl;
-    const filename = res?.data?.filename;
-
-    if (!url || !filename) {
-      throw new Error("Export failed: Incomplete response from server. URL or filename missing.");
+async function downloadExcelFromBase64(base64: string, filename: string, mimeType: string) {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
-  
-    // This is the robust download method that avoids popup blockers.
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType });
+
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename; // This attribute tells the browser to download the file with this name.
-    document.body.appendChild(a); // Append the element to the DOM (required for Firefox).
+    a.download = filename;
+    document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a); // Clean up by removing the element.
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
 }
 
 export default function DataToolsPage() {
@@ -67,54 +65,57 @@ export default function DataToolsPage() {
 
     setExportingType(statementType);
     
-    const from = statementDateRange.from.toISOString().slice(0, 10);
-    const to = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
+    const fromISO = statementDateRange.from.toISOString().slice(0, 10);
+    const toISO = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
     const baseCurrency = userProfile?.currency || 'USD';
     const locale = i18n.language;
     
-    const basePayload = { companyId, from, to, baseCurrency, locale };
+    const payload: any = { companyId, dateFrom: fromISO, dateTo: toISO, baseCurrency, locale };
 
     try {
-        let callableName = '';
-        let payload: any = {};
-
         if (statementType === 'client') {
             if (!selectedClient) {
-                toast({ variant: 'destructive', title: 'Client not selected' });
-                return;
+                toast({ variant: 'destructive', title: 'Client not selected' }); return;
             }
-            callableName = "exportStatement";
-            payload = { ...basePayload, statementType: 'client', targetId: selectedClient };
+            payload.statementType = 'client';
+            payload.clientId = selectedClient;
 
         } else if (statementType === 'supplier') {
             if (!selectedSupplier) {
-                toast({ variant: 'destructive', title: 'Supplier not selected' });
-                return;
+                toast({ variant: 'destructive', title: 'Supplier not selected' }); return;
             }
-            callableName = "exportStatement";
-            payload = { ...basePayload, statementType: 'supplier', targetId: selectedSupplier };
+            const supplier = suppliers.find(s => s.id === selectedSupplier);
+            payload.statementType = 'supplier';
+            payload.supplierId = selectedSupplier;
+            payload.supplierName = supplier?.name;
 
         } else if (statementType === 'expenses') {
-             callableName = "exportStatement";
-             payload = { ...basePayload, statementType: 'expenses' };
-
+             payload.statementType = 'expenses';
         } else if (statementType === 'productMovement') {
             if (!selectedProduct) {
-                toast({ variant: 'destructive', title: 'Product not selected' });
-                return;
+                toast({ variant: 'destructive', title: 'Product not selected' }); return;
             }
-            callableName = "exportStatement";
-            payload = { ...basePayload, statementType: 'productMovement', targetId: selectedProduct };
+            const product = products.find(p => p.id === selectedProduct);
+            payload.statementType = 'product';
+            payload.productId = selectedProduct;
+            payload.productCode = product?.productCode;
+
         } else if (statementType === 'stockReport') {
-            callableName = "exportStockReport";
-            payload = { companyId, from, to, stockMode, baseCurrency };
+            payload.statementType = 'stock';
+            payload.stockMode = stockMode;
         }
 
-        if (!callableName) throw new Error("Invalid statement type");
+        const functions = getFunctions(firebaseApp, 'us-central1');
+        const exportFn = httpsCallable(functions, 'exportStatement');
+        const result: any = await exportFn(payload);
+        
+        const { base64, filename, mimeType } = result.data;
+        if (!base64 || !filename || !mimeType) {
+            throw new Error("Invalid response from server. Export failed.");
+        }
 
-        await downloadExcel(firebaseApp, callableName, payload);
-
-        toast({ title: 'Export started', description: 'Your file is being generated and will download shortly.' });
+        await downloadExcelFromBase64(base64, filename, mimeType);
+        toast({ title: 'Export Complete', description: 'Your file has started downloading.' });
     } catch (err: any) {
         console.error('Statement export failed:', err);
         toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
