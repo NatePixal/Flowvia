@@ -4,6 +4,7 @@ exports.exportStatement = void 0;
 // functions/src/exports/index.ts
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const crypto_1 = require("crypto");
 const statement_engine_1 = require("./statement-engine");
 const client_1 = require("./builders/client");
 const supplier_1 = require("./builders/supplier");
@@ -29,16 +30,22 @@ async function getCompanyBaseCurrency(companyId) {
 }
 async function saveWorkbookAndSign(params) {
     const file = bucket.file(params.filePath);
+    // Firebase download token (works even if signBlob is denied)
+    const token = (0, crypto_1.randomUUID)();
     await file.save(params.buffer, {
         resumable: false,
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        metadata: { cacheControl: 'private, max-age=0, no-transform' },
+        metadata: {
+            cacheControl: 'private, max-age=0, no-transform',
+            // IMPORTANT: custom metadata map must be nested under "metadata"
+            metadata: {
+                firebaseStorageDownloadTokens: token,
+            },
+        },
     });
-    const [downloadUrl] = await file.getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 15 * 60 * 1000,
-    });
+    // Build Firebase token download URL (no signing required)
+    const encodedPath = encodeURIComponent(params.filePath);
+    const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
     return { downloadUrl, filePath: params.filePath };
 }
 // --- helpers for deterministic error surfacing ---

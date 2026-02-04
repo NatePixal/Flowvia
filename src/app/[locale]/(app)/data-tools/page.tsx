@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useMemo, useState } from "react";
@@ -67,7 +66,19 @@ export default function DataToolsPage() {
         });
         
         if (result.data.success && result.data.downloadUrl) {
-            window.open(result.data.downloadUrl, '_blank');
+            // FIX: Use a programmatic anchor link to bypass pop-up blockers.
+            const link = document.createElement('a');
+            link.href = result.data.downloadUrl;
+            
+            // Optional: suggest a filename to the browser
+            const fileName = `export-${statementType}-${new Date().toISOString().split('T')[0]}.xlsx`;
+            link.setAttribute('download', fileName);
+            
+            // Append to the document, click, and then remove
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
             toast({ title: 'Export Complete', description: 'Your statement is downloading.' });
             if (result.data.warnings?.length > 0) {
               toast({
