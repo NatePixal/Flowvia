@@ -6,54 +6,40 @@ import { useFirebase } from "@/firebase/provider";
 import { useCompanyCollection } from "@/hooks/use-company-collection";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ExcelImportDialog } from "@/components/data/excel-import-dialog";
 import DateRangePicker from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-import { TPL_PRODUCTS, TPL_EXPENSES, TPL_CLIENT_LEDGER, TPL_EMPLOYEE_SALARY } from "@/lib/excel/templates";
-import { importProductsXlsx, importExpensesXlsx, importClientLedgerXlsx, importEmployeeSalaryXlsx } from "@/lib/excel/importers";
-import { exportInventoryXlsx, exportExpensesXlsx, exportClientLedgerXlsx } from "@/lib/excel/exporters";
-
-import { Client, DailyExpense, Employee, Product, ClientLedgerEntry, Supplier } from "@/lib/types";
+import { Client, Product, Supplier } from "@/lib/types";
 import { useTranslation } from "react-i18next";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { add } from "date-fns";
 
+type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement';
+
 export default function DataToolsPage() {
   const { t } = useTranslation();
   const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
   const { toast } = useToast();
-  const canWrite = userProfile?.role === 'admin' || userProfile?.role === 'developer';
-  const canExportStatement = canWrite;
+  const canExportStatement = userProfile?.role === 'admin' || userProfile?.role === 'developer';
 
   const { data: products, loading: productsLoading } = useCompanyCollection<Product>("products");
-  const { data: expenses, loading: expensesLoading } = useCompanyCollection<DailyExpense>("dailyExpenses");
   const { data: clients, loading: clientsLoading } = useCompanyCollection<Client>("clients");
   const { data: suppliers, loading: suppliersLoading } = useCompanyCollection<Supplier>("suppliers");
-  const { data: employees, loading: employeesLoading } = useCompanyCollection<Employee>("employees");
 
-  const [openProducts, setOpenProducts] = useState(false);
-  const [openExpenses, setOpenExpenses] = useState(false);
-  const [openClientLedger, setOpenClientLedger] = useState(false);
-  const [openEmpSalary, setOpenEmpSalary] = useState(false);
-
-  // Statement export state
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingType, setExportingType] = useState<StatementType | null>(null);
   const [statementDateRange, setStatementDateRange] = useState<DateRange | undefined>({
     from: add(new Date(), { days: -30 }),
     to: new Date(),
   });
   
-  // Target selections
   const [selectedClient, setSelectedClient] = useState<string>("");
   const [selectedSupplier, setSelectedSupplier] = useState<string>("");
   const [selectedProduct, setSelectedProduct] = useState<string>("");
 
-  const handleExportStatement = async (statementType: 'client' | 'supplier' | 'expenses' | 'productMovement') => {
+  const handleExportStatement = async (statementType: StatementType) => {
     if (!canExportStatement || !companyId || !statementDateRange?.from) return;
 
     let targetId: string | undefined = undefined;
@@ -67,7 +53,7 @@ export default function DataToolsPage() {
         return;
     }
 
-    setIsExporting(true);
+    setExportingType(statementType);
     try {
         const functions = getFunctions(firebaseApp, 'us-central1');
         const exportStatementFn = httpsCallable(functions, 'exportStatement');
@@ -99,7 +85,7 @@ export default function DataToolsPage() {
         console.error('Statement export failed:', err);
         toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
     } finally {
-        setIsExporting(false);
+        setExportingType(null);
     }
   };
 
@@ -132,8 +118,8 @@ export default function DataToolsPage() {
                     </Select>
                 </div>
                 <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('client')} disabled={isExporting || !statementDateRange?.from || !selectedClient}>
-                       {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button onClick={() => handleExportStatement('client')} disabled={!!exportingType || !statementDateRange?.from || !selectedClient}>
+                       {exportingType === 'client' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                        Export Client Statement
                     </Button>
                 </div>
@@ -151,8 +137,8 @@ export default function DataToolsPage() {
                     </Select>
                 </div>
                 <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('supplier')} disabled={isExporting || !statementDateRange?.from || !selectedSupplier}>
-                       {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button onClick={() => handleExportStatement('supplier')} disabled={!!exportingType || !statementDateRange?.from || !selectedSupplier}>
+                       {exportingType === 'supplier' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                        Export Supplier Statement
                     </Button>
                 </div>
@@ -165,8 +151,8 @@ export default function DataToolsPage() {
                     <p className="text-sm text-muted-foreground">Export all expenses within the selected date range.</p>
                 </div>
                 <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('expenses')} disabled={isExporting || !statementDateRange?.from}>
-                        {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button onClick={() => handleExportStatement('expenses')} disabled={!!exportingType || !statementDateRange?.from}>
+                        {exportingType === 'expenses' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Export Expense Statement
                     </Button>
                 </div>
@@ -184,8 +170,8 @@ export default function DataToolsPage() {
                     </Select>
                 </div>
                 <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('productMovement')} disabled={isExporting || !statementDateRange?.from || !selectedProduct}>
-                       {isExporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button onClick={() => handleExportStatement('productMovement')} disabled={!!exportingType || !statementDateRange?.from || !selectedProduct}>
+                       {exportingType === 'productMovement' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                        Export Product Statement
                     </Button>
                 </div>
