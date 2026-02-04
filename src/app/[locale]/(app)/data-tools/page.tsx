@@ -24,14 +24,21 @@ async function downloadExcel(firebaseApp: any, callableName: string, payload: an
     const functions = getFunctions(firebaseApp, 'us-central1');
     const fn = httpsCallable(functions, callableName);
     const res: any = await fn(payload);
+    
     const url = res?.data?.downloadUrl;
-    if (!url) throw new Error("No downloadUrl returned from function.");
+    const filename = res?.data?.filename;
+
+    if (!url || !filename) {
+      throw new Error("Export failed: Incomplete response from server. URL or filename missing.");
+    }
   
+    // This is the robust download method that avoids popup blockers.
     const a = document.createElement("a");
     a.href = url;
-    a.target = "_self";
-    a.rel = "noreferrer";
+    a.download = filename; // This attribute tells the browser to download the file with this name.
+    document.body.appendChild(a); // Append the element to the DOM (required for Firefox).
     a.click();
+    document.body.removeChild(a); // Clean up by removing the element.
 }
 
 export default function DataToolsPage() {
@@ -64,38 +71,48 @@ export default function DataToolsPage() {
     const to = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
     const baseCurrency = userProfile?.currency || 'USD';
     const locale = i18n.language;
+    
+    const basePayload = { companyId, from, to, baseCurrency, locale };
 
     try {
+        let callableName = '';
+        let payload: any = {};
+
         if (statementType === 'client') {
             if (!selectedClient) {
                 toast({ variant: 'destructive', title: 'Client not selected' });
                 return;
             }
-            await downloadExcel(firebaseApp, "exportClientStatement", { companyId, clientId: selectedClient, from, to, baseCurrency });
+            callableName = "exportStatement";
+            payload = { ...basePayload, statementType: 'client', targetId: selectedClient };
 
         } else if (statementType === 'supplier') {
             if (!selectedSupplier) {
                 toast({ variant: 'destructive', title: 'Supplier not selected' });
                 return;
             }
-            const supplier = suppliers.find(s => s.id === selectedSupplier);
-            if (!supplier) throw new Error("Selected supplier not found in list.");
-            await downloadExcel(firebaseApp, "exportSupplierStatement", { companyId, supplierId: selectedSupplier, supplierName: supplier.name, from, to, baseCurrency });
+            callableName = "exportStatement";
+            payload = { ...basePayload, statementType: 'supplier', targetId: selectedSupplier };
 
         } else if (statementType === 'expenses') {
-            await downloadExcel(firebaseApp, "exportExpenseStatement", { companyId, from, to, baseCurrency });
+             callableName = "exportStatement";
+             payload = { ...basePayload, statementType: 'expenses' };
 
         } else if (statementType === 'productMovement') {
             if (!selectedProduct) {
                 toast({ variant: 'destructive', title: 'Product not selected' });
                 return;
             }
-            const product = products.find(p => p.id === selectedProduct);
-            if (!product) throw new Error("Selected product not found in list.");
-            await downloadExcel(firebaseApp, "exportProductStatement", { companyId, productCode: product.productCode, from, to });
+            callableName = "exportStatement";
+            payload = { ...basePayload, statementType: 'productMovement', targetId: selectedProduct };
         } else if (statementType === 'stockReport') {
-            await downloadExcel(firebaseApp, "exportStockReport", { companyId, from, to, stockMode, baseCurrency });
+            callableName = "exportStockReport";
+            payload = { companyId, from, to, stockMode, baseCurrency };
         }
+
+        if (!callableName) throw new Error("Invalid statement type");
+
+        await downloadExcel(firebaseApp, callableName, payload);
 
         toast({ title: 'Export started', description: 'Your file is being generated and will download shortly.' });
     } catch (err: any) {
