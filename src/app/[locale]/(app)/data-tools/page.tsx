@@ -19,7 +19,7 @@ import { add } from "date-fns";
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement';
 
 export default function DataToolsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
   const { toast } = useToast();
   const canExportStatement = userProfile?.role === 'admin' || userProfile?.role === 'developer';
@@ -63,6 +63,7 @@ export default function DataToolsPage() {
             targetId,
             dateFrom: statementDateRange.from.toISOString(),
             dateTo: (statementDateRange.to || statementDateRange.from).toISOString(),
+            locale: i18n.language,
         });
         
         if (result.data.success && result.data.downloadUrl) {

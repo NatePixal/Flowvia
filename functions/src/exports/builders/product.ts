@@ -14,90 +14,96 @@ function toDate(v: any): Date | null {
 
 export async function buildProductMovementStatement(params: {
   companyId: string;
-  productId: string;     // PRODUCT DOC ID (what UI sends)
+  productId: string;     // ✅ product document id from UI
   from: Date;
   to: Date;
-  baseCurrency: Currency; // ignored for QTY, but kept for interface consistency
+  baseCurrency: Currency;
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
   const { companyId, productId, from, to } = params;
 
-  // 1) Load product to get productCode
   const productRef = db.doc(`companies/${companyId}/products/${productId}`);
   const productSnap = await productRef.get();
   const productData = (productSnap.data() as any) || {};
+  const productName = productData?.name || productId;
 
-  const productCode: string = productData.productCode || productId; // fallback
-  const productName: string = productData.name || productCode;
+  // ✅ The correct code to match incomingProducts
+  const productCode = productData?.productCode || productId;
 
-  // 2) Read movements for THIS product
   const incomingRef = db.collection(`companies/${companyId}/incomingProducts`);
   const salesRef = db.collection(`companies/${companyId}/sales`);
 
+  const fromTs = admin.firestore.Timestamp.fromDate(from);
+  const toTs = admin.firestore.Timestamp.fromDate(to);
+
+  // ✅ Use businessDate if present, otherwise fallback to incomeDate/date for older data
+  // (This avoids “0 docs” when some docs were created before businessDate existed)
+  const incomingQueryBase = incomingRef.where('productCode', '==', productCode);
+  const salesQueryBase = salesRef.where('productId', '==', productId);
+
+  const incomingHasBusinessDate = await incomingQueryBase.orderBy('businessDate', 'asc').limit(1).get().then(s => !s.empty).catch(() => false);
+  const salesHasBusinessDate = await salesQueryBase.orderBy('businessDate', 'asc').limit(1).get().then(s => !s.empty).catch(() => false);
+
+  const incomingDateField = incomingHasBusinessDate ? 'businessDate' : 'incomeDate';
+  const salesDateField = salesHasBusinessDate ? 'businessDate' : 'date';
+
+  // Range movements
   const [incomingSnap, salesSnap] = await Promise.all([
-    incomingRef.where('productCode', '==', productCode).get(),
-    salesRef.where('productId', '==', productId).get(),
+    incomingQueryBase
+      .where(incomingDateField, '>=', fromTs)
+      .where(incomingDateField, '<=', toTs)
+      .orderBy(incomingDateField, 'asc')
+      .get(),
+    salesQueryBase
+      .where(salesDateField, '>=', fromTs)
+      .where(salesDateField, '<=', toTs)
+      .orderBy(salesDateField, 'asc')
+      .get(),
   ]);
 
-  // 3) Normalize movements + dates
-  const incomingMovements = incomingSnap.docs.map((d) => {
-    const doc = d.data() as any;
-    const date = toDate(doc.businessDate ?? doc.incomeDate ?? doc.date);
-    const qty = Number(doc.quantity ?? 0);
-    return {
-      kind: 'IN' as const,
+  const movements = [
+    ...incomingSnap.docs.map(d => ({
+      type: 'IN' as const,
       id: d.id,
-      doc,
-      date,
-      qty,
-    };
-  });
-
-  const salesMovements = salesSnap.docs.map((d) => {
-    const doc = d.data() as any;
-    const date = toDate(doc.businessDate ?? doc.date ?? doc.createdAt);
-    const qty = Number(doc.quantity ?? 0);
-    return {
-      kind: 'OUT' as const,
+      doc: d.data(),
+      date: toDate(d.data()[incomingDateField]) ?? toDate(d.data().createdAt),
+    })),
+    ...salesSnap.docs.map(d => ({
+      type: 'OUT' as const,
       id: d.id,
-      doc,
-      date,
-      qty,
-    };
-  });
-
-  // 4) Compute openingQty LOCALLY (no extra Firestore queries => no index crash)
-  let openingQty = 0;
-  for (const m of incomingMovements) {
-    if (m.date && m.date < from) openingQty += m.qty;
-  }
-  for (const m of salesMovements) {
-    if (m.date && m.date < from) openingQty -= m.qty;
-  }
-
-  // 5) Build rows in range
-  const inRange = [...incomingMovements, ...salesMovements]
-    .filter((m) => m.date && m.date >= from && m.date <= to)
+      doc: d.data(),
+      date: toDate(d.data()[salesDateField]) ?? toDate(d.data().createdAt),
+    })),
+  ]
+    .filter(m => m.date && m.date >= from && m.date <= to)
     .sort((a, b) => a.date!.getTime() - b.date!.getTime());
+
+  // Opening quantity
+  const [beforeIncomingSnap, beforeSalesSnap] = await Promise.all([
+    incomingQueryBase.where(incomingDateField, '<', fromTs).get(),
+    salesQueryBase.where(salesDateField, '<', fromTs).get(),
+  ]);
+
+  let openingQty = 0;
+  beforeIncomingSnap.forEach(d => { openingQty += Number(d.data().quantity ?? 0); });
+  beforeSalesSnap.forEach(d => { openingQty -= Number(d.data().quantity ?? 0); });
 
   let runningQty = openingQty;
   const rows: StatementRow[] = [];
 
-  for (const m of inRange) {
-    const qtyIn = m.kind === 'IN' ? m.qty : 0;
-    const qtyOut = m.kind === 'OUT' ? m.qty : 0;
-
-    const description =
-      m.kind === 'IN'
-        ? `Incoming from ${m.doc.supplier || 'N/A'}`
-        : `Sale to ${m.doc.clientName || 'N/A'}`;
+  for (const m of movements) {
+    const qty = Number(m.doc.quantity ?? 0);
+    const qtyIn = m.type === 'IN' ? qty : 0;
+    const qtyOut = m.type === 'OUT' ? qty : 0;
 
     runningQty = runningQty + qtyIn - qtyOut;
 
     rows.push({
       businessDate: m.date!,
-      description,
+      description: m.type === 'IN'
+        ? `Incoming from ${m.doc.supplier || 'N/A'}`
+        : `Sale to ${m.doc.clientName || 'N/A'}`,
       reference: m.id,
-      type: m.kind === 'IN' ? 'Incoming' : 'Sale',
+      type: m.type === 'IN' ? 'Incoming' : 'Sale',
       currency: 'QTY',
       debitOrig: qtyIn,
       creditOrig: qtyOut,
@@ -108,7 +114,7 @@ export async function buildProductMovementStatement(params: {
   }
 
   const summary: StatementSummary = {
-    title: 'Product Movement Statement',
+    title: 'Inventory Movement Statement',
     companyId,
     periodFrom: from,
     periodTo: to,
