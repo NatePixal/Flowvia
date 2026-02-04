@@ -2,6 +2,7 @@
 import { Timestamp } from 'firebase-admin/firestore';
 
 export type Currency = 'USD' | 'UZS' | 'AED' | 'CNY' | string;
+export type StatementCurrency = Currency | 'QTY';
 
 export type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement';
 
@@ -15,7 +16,7 @@ export type StatementRow = {
   reference: string;
   type: string;
 
-  currency: Currency;
+  currency: StatementCurrency;
 
   fxAsOf?: Date | null;
   fxRateToBase?: number | null;
@@ -39,7 +40,7 @@ export type StatementSummary = {
   periodTo: Date;
 
   entityLabel: string; // "Client: Hamza Denov" etc
-  baseCurrency: Currency;
+  baseCurrency: StatementCurrency;
 
   openingBase: number;
   totalDebitBase: number;

@@ -1,5 +1,5 @@
 // functions/src/exports/money.ts
-import { Currency } from './types';
+import { Currency, StatementCurrency } from './types';
 
 // IMPORTANT: match your real app config here.
 // UZS should be 0 in practice for your business.
@@ -21,7 +21,7 @@ export function minorToMajor(minor: number, currency: Currency): number {
 }
 
 // Excel number format: "#,##0" or "#,##0.00"
-export function excelNumFmtForCurrency(currency: Currency): string {
+export function excelNumFmtForCurrency(currency: StatementCurrency): string {
   if (currency === 'QTY') return '#,##0';
   const d = currencyDecimals(currency);
   if (d <= 0) return '#,##0';

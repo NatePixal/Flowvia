@@ -14,16 +14,22 @@ function toDate(v: any): Date | null {
 
 export async function buildProductMovementStatement(params: {
   companyId: string;
-  productId: string; // This is the productCode
+  productId: string; // This is the PRODUCT DOC ID
   from: Date;
   to: Date;
-  baseCurrency: Currency;
+  baseCurrency: Currency; // Monetary, but ignored for this report
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
   const { companyId, productId, from, to } = params;
 
+  // 1. Get product details (name, productCode) from the productId (docId)
   const productRef = db.doc(`companies/${companyId}/products/${productId}`);
   const productSnap = await productRef.get();
-  const productName = (productSnap.data() as any)?.name || productId;
+  if (!productSnap.exists) {
+    throw new Error(`Product with ID ${productId} not found.`);
+  }
+  const productData = productSnap.data() as any;
+  const productName = productData.name || productId;
+  const productCode = productData.productCode; // The code used in other collections
 
   const incomingRef = db.collection(`companies/${companyId}/incomingProducts`);
   const salesRef = db.collection(`companies/${companyId}/sales`);
@@ -31,9 +37,9 @@ export async function buildProductMovementStatement(params: {
   const fromTs = admin.firestore.Timestamp.fromDate(from);
   const toTs = admin.firestore.Timestamp.fromDate(to);
 
-  // Get all relevant movements
-  const incomingQuery = incomingRef.where('productCode', '==', productId);
-  const salesQuery = salesRef.where('productId', '==', productId);
+  // 2. Get all relevant movements using correct identifiers
+  const incomingQuery = incomingRef.where('productCode', '==', productCode);
+  const salesQuery = salesRef.where('productId', '==', productId); // sales use doc ID
   
   const [incomingSnap, salesSnap] = await Promise.all([
     incomingQuery.get(),
@@ -46,7 +52,7 @@ export async function buildProductMovementStatement(params: {
   ].filter(m => m.date && m.date >= from && m.date <= to)
    .sort((a, b) => a.date!.getTime() - b.date!.getTime());
 
-  // Opening Qty calculation
+  // 3. Opening Qty calculation using businessDate
   const beforeIncomingSnap = await incomingQuery.where('businessDate', '<', fromTs).get();
   const beforeSalesSnap = await salesQuery.where('businessDate', '<', fromTs).get();
   
@@ -92,8 +98,8 @@ export async function buildProductMovementStatement(params: {
     companyId,
     periodFrom: from,
     periodTo: to,
-    entityLabel: `Product: ${productName} (${productId})`,
-    baseCurrency: 'QTY' as Currency,
+    entityLabel: `Product: ${productName} (${productCode})`,
+    baseCurrency: 'QTY', // Correctly set to QTY
     openingBase: openingQty,
     totalDebitBase: rows.reduce((s, r) => s + r.debitBase, 0),
     totalCreditBase: rows.reduce((s, r) => s + r.creditBase, 0),
