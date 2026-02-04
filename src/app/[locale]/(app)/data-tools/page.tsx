@@ -20,28 +20,6 @@ import { add } from "date-fns";
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
 type StockMode = "range" | "asOfToday" | "both";
 
-async function downloadExcel(base64: string, filename: string, mimeType: string) {
-    if (!base64) {
-      throw new Error("Invalid response from server: base64 data is missing.");
-    }
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-}
-
 export default function DataToolsPage() {
   const { t, i18n } = useTranslation();
   const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
@@ -73,46 +51,71 @@ export default function DataToolsPage() {
     const baseCurrency = userProfile?.currency || 'USD';
     const locale = i18n.language;
     
-    const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO, baseCurrency, locale };
+    const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO, locale };
+
+    if (statementType === 'client') {
+        if (!selectedClient) { toast({ variant: 'destructive', title: 'Client not selected' }); setExportingType(null); return; }
+        payload.targetId = selectedClient;
+        payload.baseCurrency = baseCurrency;
+
+    } else if (statementType === 'supplier') {
+        if (!selectedSupplier) { toast({ variant: 'destructive', title: 'Supplier not selected' }); setExportingType(null); return; }
+        payload.targetId = selectedSupplier;
+        payload.supplierName = suppliers.find(s => s.id === selectedSupplier)?.name;
+        payload.baseCurrency = baseCurrency;
+
+    } else if (statementType === 'expenses') {
+         payload.baseCurrency = baseCurrency;
+
+    } else if (statementType === 'productMovement') {
+        if (!selectedProduct) { toast({ variant: 'destructive', title: 'Product not selected' }); setExportingType(null); return; }
+        const product = products.find(p => p.id === selectedProduct);
+        if (!product) { toast({ variant: 'destructive', title: 'Product details not found' }); setExportingType(null); return; }
+        payload.targetId = selectedProduct;
+        payload.productCode = product.productCode;
+        payload.baseCurrency = baseCurrency;
+
+    } else if (statementType === 'stockReport') {
+        payload.stockMode = stockMode;
+        payload.baseCurrency = baseCurrency;
+    }
+
+    const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatement");
 
     try {
-        if (statementType === 'client') {
-            if (!selectedClient) {
-                toast({ variant: 'destructive', title: 'Client not selected' }); return;
-            }
-            payload.targetId = selectedClient;
+        const res: any = await fn(payload);
+        const { base64, filename, mimeType, warnings } = res.data || {};
 
-        } else if (statementType === 'supplier') {
-            if (!selectedSupplier) {
-                toast({ variant: 'destructive', title: 'Supplier not selected' }); return;
-            }
-            payload.targetId = selectedSupplier;
-
-        } else if (statementType === 'expenses') {
-             // No extra payload needed
-        } else if (statementType === 'productMovement') {
-            if (!selectedProduct) {
-                toast({ variant: 'destructive', title: 'Product not selected' }); return;
-            }
-            payload.targetId = selectedProduct;
-
-        } else if (statementType === 'stockReport') {
-            payload.stockMode = stockMode;
-        }
-
-        const functions = getFunctions(firebaseApp, 'us-central1');
-        const exportFn = httpsCallable(functions, 'exportStatement');
-        const result: any = await exportFn(payload);
-        
-        const { base64, filename, mimeType, warnings } = result.data;
         if (warnings && warnings.length > 0) {
           toast({ variant: 'destructive', title: 'Export Warnings', description: warnings.join('\n') });
         }
 
-        await downloadExcel(base64, filename, mimeType);
+        if (!base64) {
+          throw new Error("Invalid response from server: base64 data is missing.");
+        }
+
+        const byteChars = atob(base64);
+        const byteNumbers = new Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteNumbers[i] = byteChars.charCodeAt(i);
+        }
+
+        const blob = new Blob(
+          [new Uint8Array(byteNumbers)],
+          { type: mimeType || "application/octet-stream" }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename || "export.xlsx";
+        document.body.appendChild(a); // Required for Firefox
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
         toast({ title: 'Export Complete', description: 'Your file has started downloading.' });
     } catch (err: any) {
-        console.error('Statement export failed:', err);
+        console.error("Statement export failed:", err);
         toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
     } finally {
         setExportingType(null);

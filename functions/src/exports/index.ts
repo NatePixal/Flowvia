@@ -1,4 +1,3 @@
-
 // functions/src/exports/index.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
@@ -63,7 +62,7 @@ export const exportStatement = functions
     try {
       requireAdminOrDev(context);
 
-      const { companyId, statementType, targetId, dateFrom, dateTo, locale } = data || {};
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode, supplierName, productCode } = data || {};
       if (!companyId || !statementType || !dateFrom || !dateTo) {
         throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
       }
@@ -84,8 +83,8 @@ export const exportStatement = functions
       }
 
       if (statementType === 'supplier') {
-        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
-        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        if (!targetId || !supplierName) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId/supplierName for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, supplierName: supplierName, from, to, baseCurrency });
         buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
         filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
@@ -99,15 +98,14 @@ export const exportStatement = functions
       }
 
       if (statementType === 'productMovement') {
-        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
-        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+        if (!targetId || !productCode) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId/productCode for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, productCode: productCode, from, to, baseCurrency });
         buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
         filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
-      if (statementType === 'stockReport') {
-        const { stockMode } = data;
+      if (statementType === 'stockReport' || statementType === 'stock') {
         if (!stockMode) throw new functions.https.HttpsError('invalid-argument', 'Missing stockMode for stock report.');
         buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
         filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
