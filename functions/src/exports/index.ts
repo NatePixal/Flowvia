@@ -1,75 +1,185 @@
 // functions/src/exports/index.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
-import { HttpsError } from 'firebase-functions/v1/https';
 import { randomUUID } from 'crypto';
 
-import { exportClientStatementExcel } from "./clientStatement";
-import { exportSupplierStatementExcel } from "./supplierStatement";
-import { exportExpenseStatementExcel } from "./expenseStatement";
-import { exportProductMovementExcel } from "./productMovement";
+import { buildStatementWorkbook } from './statement-engine';
+import { buildClientStatement } from './builders/client';
+import { buildSupplierStatement } from './builders/supplier';
+import { buildExpensesStatement } from './builders/expenses';
+import { buildProductMovementStatement } from './builders/product';
+import { Currency } from './types';
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
+
+const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
+function requireAdminOrDev(context: functions.https.CallableContext) {
+  const role = context.auth?.token?.role;
+  if (!context.auth || (role !== 'admin' && role !== 'developer')) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
+  }
+}
 
-async function saveToStorageAndSign(buffer: Buffer, filename: string): Promise<{ url: string, path: string }> {
-  const path = `exports/${Date.now()}_${filename}`;
-  const file = bucket.file(path);
+async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
+  const snap = await db.doc(`companies/${companyId}`).get();
+  const base = (snap.data() as any)?.baseCurrency;
+  return (base || 'USD') as Currency;
+}
+
+async function saveWorkbookAndSign(params: {
+  companyId: string;
+  filePath: string;
+  buffer: Buffer;
+}): Promise<{ downloadUrl: string; filePath: string }> {
+  const file = bucket.file(params.filePath);
+
+  // Firebase download token (works even if signBlob is denied)
   const token = randomUUID();
 
-  await file.save(buffer, {
+  await file.save(params.buffer, {
     resumable: false,
-    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    metadata: { 
-      cacheControl: "private, max-age=60",
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    metadata: {
+      cacheControl: 'private, max-age=0, no-transform',
+      // IMPORTANT: custom metadata map must be nested under "metadata"
       metadata: {
         firebaseStorageDownloadTokens: token,
       },
     },
   });
-  
-  const encodedPath = encodeURIComponent(path);
-  const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
-  
-  return { url, path };
+
+  // Build Firebase token download URL (no signing required)
+  const encodedPath = encodeURIComponent(params.filePath);
+  const downloadUrl =
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
+
+  return { downloadUrl, filePath: params.filePath };
 }
 
-export const exportClientStatement = functions.region("us-central1").https.onCall(async (data, context) => {
-  if (!data?.companyId || !data?.clientId || !data?.from || !data?.to) {
-    throw new HttpsError("invalid-argument", "Missing companyId/clientId/from/to");
-  }
 
-  const buf = await exportClientStatementExcel(data);
-  const out = await saveToStorageAndSign(buf, `client_statement_${data.clientId}.xlsx`);
-  return { downloadUrl: out.url };
-});
+// --- helpers for deterministic error surfacing ---
+function isHttpsError(err: any): err is functions.https.HttpsError {
+  return err instanceof functions.https.HttpsError || err?.constructor?.name === 'HttpsError';
+}
 
-export const exportSupplierStatement = functions.region("us-central1").https.onCall(async (data, context) => {
-  if (!data?.companyId || !data?.supplierId || !data?.from || !data?.to) {
-    throw new HttpsError("invalid-argument", "Missing companyId/supplierId/from/to");
-  }
-  const buf = await exportSupplierStatementExcel(data);
-  const out = await saveToStorageAndSign(buf, `supplier_statement_${data.supplierId}.xlsx`);
-  return { downloadUrl: out.url };
-});
+function looksLikeMissingIndex(err: any): boolean {
+  const msg = String(err?.message || '');
+  // Covers: "The query requires an index. You can create it here: ..."
+  return /requires an index|create.*index|create_composite/i.test(msg);
+}
 
-export const exportExpenseStatement = functions.region("us-central1").https.onCall(async (data, context) => {
-  if (!data?.companyId || !data?.from || !data?.to) {
-    throw new HttpsError("invalid-argument", "Missing companyId/from/to");
-  }
-  const buf = await exportExpenseStatementExcel(data);
-  const out = await saveToStorageAndSign(buf, `expenses_${data.from}_${data.to}.xlsx`);
-  return { downloadUrl: out.url };
-});
+// Allowed codes for HttpsError (defensive)
+const ALLOWED_CODES = new Set([
+  'cancelled',
+  'unknown',
+  'invalid-argument',
+  'deadline-exceeded',
+  'not-found',
+  'already-exists',
+  'permission-denied',
+  'unauthenticated',
+  'resource-exhausted',
+  'failed-precondition',
+  'aborted',
+  'out-of-range',
+  'unimplemented',
+  'internal',
+  'unavailable',
+  'data-loss',
+]);
 
-export const exportProductStatement = functions.region("us-central1").https.onCall(async (data, context) => {
-    if (!data?.companyId || !data?.productId || !data?.from || !data?.to) {
-        throw new HttpsError("invalid-argument", "Missing companyId/productId/from/to");
+function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
+  const c = typeof code === 'string' ? code : '';
+  return (ALLOWED_CODES.has(c) ? c : 'internal') as functions.https.FunctionsErrorCode;
+}
+
+/**
+ * Generic dispatcher for your UI convenience.
+ */
+export const exportStatement = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    try {
+      requireAdminOrDev(context);
+
+      const { companyId, statementType, targetId, dateFrom, dateTo } = data || {};
+      if (!companyId || !statementType || !dateFrom || !dateTo) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Missing companyId/statementType/dateFrom/dateTo.'
+        );
+      }
+
+      const baseCurrency = await getCompanyBaseCurrency(companyId);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+
+      if (statementType === 'client') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+        const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/client/${targetId}/client_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      if (statementType === 'supplier') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/supplier/${targetId}/supplier_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      if (statementType === 'expenses') {
+        const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/expenses/all/expense_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      if (statementType === 'productMovement') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
+        const filePath = `companies/${companyId}/exports/product/${targetId}/product_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+    } catch (err: any) {
+      // Log full backend error for console visibility
+      console.error('exportStatement failed:', {
+        code: err?.code,
+        message: err?.message,
+        stack: err?.stack,
+      });
+
+      // Re-throw only real HttpsError
+      if (isHttpsError(err)) throw err;
+
+      // Missing index (or index still building) is the #1 Firestore export crash
+      if (looksLikeMissingIndex(err)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.',
+          { originalCode: err?.code, originalMessage: String(err?.message || '') }
+        );
+      }
+
+      // Wrap everything else
+      throw new functions.https.HttpsError(
+        normalizeHttpsCode(err?.code),
+        String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'),
+        { originalCode: err?.code, originalMessage: String(err?.message || '') }
+      );
     }
-    const buf = await exportProductMovementExcel(data);
-    const out = await saveToStorageAndSign(buf, `product_movement_${data.productId}.xlsx`);
-    return { downloadUrl: out.url };
-});
+  });
