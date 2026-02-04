@@ -1,6 +1,7 @@
 // functions/src/exports/index.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
+import { randomUUID } from 'crypto';
 
 import { buildStatementWorkbook } from './statement-engine';
 import { buildClientStatement } from './builders/client';
@@ -29,23 +30,35 @@ async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
   return (base || 'USD') as Currency;
 }
 
-async function saveWorkbookAndSign(params: { filePath: string; buffer: Buffer }) {
+async function saveWorkbookAndSign(params: {
+  filePath: string;
+  buffer: Buffer;
+}): Promise<{ downloadUrl: string; filePath: string }> {
   const file = bucket.file(params.filePath);
+
+  // Firebase download token (works even if signBlob is denied)
+  const token = randomUUID();
 
   await file.save(params.buffer, {
     resumable: false,
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    metadata: { cacheControl: 'private, max-age=0, no-transform' },
+    metadata: {
+      cacheControl: 'private, max-age=0, no-transform',
+      // IMPORTANT: custom metadata map must be nested under "metadata"
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
   });
 
-  const [downloadUrl] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
-    expires: Date.now() + 15 * 60 * 1000,
-  });
+  // Build Firebase token download URL (no signing required)
+  const encodedPath = encodeURIComponent(params.filePath);
+  const downloadUrl =
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
 
   return { downloadUrl, filePath: params.filePath };
 }
+
 
 // --- helpers for deterministic error surfacing ---
 function isHttpsError(err: any): err is functions.https.HttpsError {

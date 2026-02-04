@@ -4,152 +4,132 @@ exports.buildStatementWorkbook = buildStatementWorkbook;
 // functions/src/exports/statement-engine.ts
 const ExcelJS = require("exceljs");
 const money_1 = require("./money");
+function safeNumFmt(currency) {
+    // Quantity statements (no currency)
+    if (currency === 'QTY')
+        return '#,##0.00';
+    try {
+        const fmt = (0, money_1.excelNumFmtForCurrency)(currency);
+        return fmt || '#,##0.00';
+    }
+    catch (_a) {
+        return '#,##0.00';
+    }
+}
 async function buildStatementWorkbook(params) {
     const { summary, rows, baseCurrency } = params;
     const wb = new ExcelJS.Workbook();
     wb.creator = 'FlowVia';
     wb.created = new Date();
-    // ===== Sheet 1: Summary =====
-    const shSummary = wb.addWorksheet('Summary');
+    // ===== Summary sheet =====
+    const shSummary = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] });
     shSummary.columns = [
-        { width: 26 },
-        { width: 70 },
+        { header: '', key: 'k', width: 22 },
+        { header: '', key: 'v', width: 40 },
+        { header: '', key: 'k2', width: 18 },
+        { header: '', key: 'v2', width: 24 },
     ];
-    const writeKV = (r, k, v) => {
-        shSummary.getCell(`A${r}`).value = k;
-        shSummary.getCell(`A${r}`).font = { bold: true };
-        shSummary.getCell(`B${r}`).value = v;
-    };
-    writeKV(1, 'Report', summary.title);
-    writeKV(2, 'CompanyId', summary.companyId);
-    writeKV(3, 'Entity', summary.entityLabel);
-    writeKV(4, 'Period', `${fmtDate(summary.periodFrom)} → ${fmtDate(summary.periodTo)}`);
-    writeKV(5, 'Base Currency', summary.baseCurrency);
-    writeKV(7, 'Opening Balance (Base)', summary.openingBase);
-    writeKV(8, 'Total Debit (Base)', summary.totalDebitBase);
-    writeKV(9, 'Total Credit (Base)', summary.totalCreditBase);
-    writeKV(10, 'Closing Balance (Base)', summary.closingBase);
-    writeKV(12, 'Transactions', summary.txCount);
-    // Base number formats
-    const baseFmt = (0, money_1.excelNumFmtForCurrency)(baseCurrency);
-    ['B7', 'B8', 'B9', 'B10'].forEach((addr) => {
-        shSummary.getCell(addr).numFmt = baseFmt;
-    });
-    // Warnings
-    shSummary.getCell('A14').value = 'Warnings';
-    shSummary.getCell('A14').font = { bold: true };
-    if (summary.warnings.length === 0) {
-        shSummary.getCell('B14').value = 'None';
-    }
-    else {
-        shSummary.getCell('B14').value = summary.warnings.join(' | ');
-    }
+    shSummary.mergeCells('A1:D1');
+    shSummary.getCell('A1').value = summary.title;
+    shSummary.getCell('A1').font = { size: 16, bold: true };
+    shSummary.getCell('A3').value = 'Entity';
+    shSummary.getCell('B3').value = summary.entityLabel;
+    shSummary.getCell('A4').value = 'Period';
+    shSummary.getCell('B4').value = `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo
+        .toISOString()
+        .slice(0, 10)}`;
+    shSummary.getCell('A5').value = 'Base Currency';
+    shSummary.getCell('B5').value = String(summary.baseCurrency);
+    const baseFmt = safeNumFmt(baseCurrency);
+    shSummary.getCell('A7').value = 'Opening';
+    shSummary.getCell('B7').value = summary.openingBase;
+    shSummary.getCell('B7').numFmt = baseFmt;
+    shSummary.getCell('A8').value = 'Total Debit';
+    shSummary.getCell('B8').value = summary.totalDebitBase;
+    shSummary.getCell('B8').numFmt = baseFmt;
+    shSummary.getCell('A9').value = 'Total Credit';
+    shSummary.getCell('B9').value = summary.totalCreditBase;
+    shSummary.getCell('B9').numFmt = baseFmt;
+    shSummary.getCell('A10').value = 'Closing';
+    shSummary.getCell('B10').value = summary.closingBase;
+    shSummary.getCell('B10').numFmt = baseFmt;
+    shSummary.getCell('A12').value = 'Warnings';
+    shSummary.getCell('B12').value = summary.warnings.length ? summary.warnings.join('\n') : '—';
+    shSummary.getCell('B12').alignment = { wrapText: true };
     // Totals by original currency
-    shSummary.getCell('A16').value = 'Totals by Currency (Original)';
-    shSummary.getCell('A16').font = { bold: true };
-    shSummary.getRow(17).values = ['Currency', 'Debit (Orig)', 'Credit (Orig)'];
-    shSummary.getRow(17).font = { bold: true };
-    shSummary.columns = [
-        { width: 26 },
-        { width: 26 },
-        { width: 26 },
-        { width: 26 },
-    ];
-    let r = 18;
-    for (const [cur, totals] of Object.entries(summary.totalsByCurrencyOrig)) {
-        shSummary.getCell(`A${r}`).value = cur;
-        shSummary.getCell(`B${r}`).value = totals.debit;
-        shSummary.getCell(`C${r}`).value = totals.credit;
-        // Use that currency format for orig totals
-        const fmt = (0, money_1.excelNumFmtForCurrency)(cur);
-        shSummary.getCell(`B${r}`).numFmt = fmt;
-        shSummary.getCell(`C${r}`).numFmt = fmt;
-        r++;
-    }
-    // ===== Sheet 2: Statement =====
-    const sh = wb.addWorksheet('Statement');
+    let rowStart = 14;
+    shSummary.getCell(`A${rowStart}`).value = 'Totals by currency (original)';
+    shSummary.getCell(`A${rowStart}`).font = { bold: true };
+    rowStart++;
+    shSummary.getCell(`A${rowStart}`).value = 'Currency';
+    shSummary.getCell(`B${rowStart}`).value = 'Debit';
+    shSummary.getCell(`C${rowStart}`).value = 'Credit';
+    shSummary.getRow(rowStart).font = { bold: true };
+    rowStart++;
+    Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]) => {
+        shSummary.getCell(`A${rowStart}`).value = cur;
+        shSummary.getCell(`B${rowStart}`).value = t.debit;
+        shSummary.getCell(`C${rowStart}`).value = t.credit;
+        const fmt = safeNumFmt(cur);
+        shSummary.getCell(`B${rowStart}`).numFmt = fmt;
+        shSummary.getCell(`C${rowStart}`).numFmt = fmt;
+        rowStart++;
+    });
+    // ===== Rows sheet =====
+    const sh = wb.addWorksheet('Statement', { views: [{ state: 'frozen', ySplit: 1 }] });
     sh.columns = [
-        { header: 'Date', key: 'date', width: 12 },
-        { header: 'Description', key: 'desc', width: 44 },
-        { header: 'Reference', key: 'ref', width: 26 },
-        { header: 'Type', key: 'type', width: 14 },
+        { header: 'Business Date', key: 'date', width: 14 },
+        { header: 'Description', key: 'desc', width: 40 },
+        { header: 'Reference', key: 'ref', width: 18 },
+        { header: 'Type', key: 'type', width: 12 },
         { header: 'Currency', key: 'cur', width: 10 },
-        { header: 'FX As-Of Date', key: 'fxAsOf', width: 12 },
-        { header: 'FX Rate To Base', key: 'fxRate', width: 16 },
-        { header: 'Debit (Orig)', key: 'debitO', width: 16 },
-        { header: 'Credit (Orig)', key: 'creditO', width: 16 },
-        { header: 'Debit (Base)', key: 'debitB', width: 16 },
-        { header: 'Credit (Base)', key: 'creditB', width: 16 },
-        { header: 'Running Balance (Base)', key: 'runB', width: 22 },
+        { header: 'FX As-Of', key: 'fxAsOf', width: 14 },
+        { header: 'FX Rate', key: 'fxRate', width: 12 },
+        { header: 'Debit (Orig)', key: 'debitOrig', width: 14 },
+        { header: 'Credit (Orig)', key: 'creditOrig', width: 14 },
+        { header: `Debit (${baseCurrency})`, key: 'debitBase', width: 16 },
+        { header: `Credit (${baseCurrency})`, key: 'creditBase', width: 16 },
+        { header: `Running (${baseCurrency})`, key: 'running', width: 18 },
     ];
-    // Header styling
-    const headerRow = sh.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.alignment = { vertical: 'middle' };
-    headerRow.height = 18;
-    // Freeze + filter
-    sh.views = [{ state: 'frozen', ySplit: 1 }];
-    sh.autoFilter = {
-        from: 'A1',
-        to: 'L1',
-    };
-    // Fill rows
-    rows.forEach((x) => {
-        var _a, _b;
+    sh.getRow(1).font = { bold: true };
+    rows.forEach((r) => {
+        var _a;
         sh.addRow({
-            date: x.businessDate,
-            desc: x.description,
-            ref: x.reference,
-            type: x.type,
-            cur: x.currency,
-            fxAsOf: (_a = x.fxAsOf) !== null && _a !== void 0 ? _a : null,
-            fxRate: (_b = x.fxRateToBase) !== null && _b !== void 0 ? _b : null,
-            debitO: x.debitOrig,
-            creditO: x.creditOrig,
-            debitB: x.debitBase,
-            creditB: x.creditBase,
-            runB: x.runningBase,
+            date: r.businessDate ? r.businessDate.toISOString().slice(0, 10) : '',
+            desc: r.description,
+            ref: r.reference,
+            type: r.type,
+            cur: r.currency,
+            fxAsOf: r.fxAsOf ? r.fxAsOf.toISOString().slice(0, 10) : '',
+            fxRate: r.fxStatus === 'MISSING' ? 'FX MISSING' : (_a = r.fxRateToBase) !== null && _a !== void 0 ? _a : '',
+            debitOrig: r.debitOrig,
+            creditOrig: r.creditOrig,
+            debitBase: r.debitBase,
+            creditBase: r.creditBase,
+            running: r.runningBase,
         });
     });
-    // Formats per column
-    sh.getColumn('date').numFmt = 'yyyy-mm-dd';
-    sh.getColumn('fxAsOf').numFmt = 'yyyy-mm-dd';
-    sh.getColumn('fxRate').numFmt = '#,##0.000000';
-    // Base columns use base fmt
-    sh.getColumn('debitB').numFmt = baseFmt;
-    sh.getColumn('creditB').numFmt = baseFmt;
-    sh.getColumn('runB').numFmt = baseFmt;
-    // Orig columns must vary per row currency → we apply cell formatting row-by-row
-    for (let i = 2; i <= rows.length + 1; i++) {
+    // Apply formats
+    for (let i = 2; i <= sh.rowCount; i++) {
         const row = rows[i - 2];
-        const fmtOrig = (0, money_1.excelNumFmtForCurrency)(row.currency);
-        sh.getCell(`H${i}`).numFmt = fmtOrig; // Debit Orig
-        sh.getCell(`I${i}`).numFmt = fmtOrig; // Credit Orig
-        // If FX missing, mark visually (optional)
-        if (row.fxStatus === 'MISSING') {
-            sh.getCell(`G${i}`).value = 'FX MISSING';
-            sh.getCell(`G${i}`).font = { color: { argb: 'FFFF0000' }, bold: true };
-        }
+        const fmtOrig = safeNumFmt(row.currency);
+        sh.getCell(i, 8).numFmt = fmtOrig;
+        sh.getCell(i, 9).numFmt = fmtOrig;
+        sh.getCell(i, 10).numFmt = baseFmt;
+        sh.getCell(i, 11).numFmt = baseFmt;
+        sh.getCell(i, 12).numFmt = baseFmt;
     }
-    // Totals row
-    const totalsRowIndex = rows.length + 2;
-    const tr = sh.getRow(totalsRowIndex);
-    tr.getCell(1).value = 'TOTALS';
-    tr.font = { bold: true };
-    // Excel formulas for base totals
-    if (rows.length > 0) {
-        tr.getCell(10).value = { formula: `SUM(J2:J${totalsRowIndex - 1})` }; // Debit Base
-        tr.getCell(11).value = { formula: `SUM(K2:K${totalsRowIndex - 1})` }; // Credit Base
-        tr.getCell(12).value = { formula: `L${totalsRowIndex - 1}` }; // Closing (last running)
-        tr.getCell(10).numFmt = baseFmt;
-        tr.getCell(11).numFmt = baseFmt;
-        tr.getCell(12).numFmt = baseFmt;
-    }
-    // Output
+    sh.autoFilter = { from: 'A1', to: 'L1' };
+    const totalsRowIndex = sh.rowCount + 2;
+    sh.getCell(`G${totalsRowIndex}`).value = 'TOTALS';
+    sh.getCell(`G${totalsRowIndex}`).font = { bold: true };
+    sh.getCell(totalsRowIndex, 10).value = { formula: `SUM(J2:J${totalsRowIndex - 2})` };
+    sh.getCell(totalsRowIndex, 11).value = { formula: `SUM(K2:K${totalsRowIndex - 2})` };
+    sh.getCell(totalsRowIndex, 12).value = { formula: `L${totalsRowIndex - 1}` };
+    sh.getCell(totalsRowIndex, 10).numFmt = baseFmt;
+    sh.getCell(totalsRowIndex, 11).numFmt = baseFmt;
+    sh.getCell(totalsRowIndex, 12).numFmt = baseFmt;
     const buf = await wb.xlsx.writeBuffer();
     return Buffer.from(buf);
-}
-function fmtDate(d) {
-    return d.toISOString().slice(0, 10);
 }
 //# sourceMappingURL=statement-engine.js.map
