@@ -184,6 +184,7 @@ export type ClientLedgerEntry = {
   relatedSaleId?: string;
   note?: string;
   legacy?: boolean;
+  businessDate?: FirestoreTs;
   
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
@@ -228,6 +229,7 @@ export type SupplierLedgerEntry = {
 
   note?: string;
   createdAt: FirestoreTs;               // Firestore Timestamp
+  businessDate?: FirestoreTs;
   relatedIncomingLogId?: string; // Link to the incoming stock log
 };
 
@@ -359,4 +361,3 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
-
