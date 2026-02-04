@@ -32,12 +32,13 @@ async function downloadExcel(callableName: string, payload: any) {
   a.href = url;
   a.target = "_self"; // No new tab
   a.rel = "noreferrer";
+  document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 }
 
 export default function DataToolsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { companyId, userProfile, firebaseApp } = useFirebase();
   const { currency } = useCurrency();
   const { toast } = useToast();
@@ -66,7 +67,8 @@ export default function DataToolsPage() {
             companyId,
             from: format(statementDateRange.from, 'yyyy-MM-dd'),
             to: format(statementDateRange.to || statementDateRange.from, 'yyyy-MM-dd'),
-            currency, // Pass the main reporting currency
+            currency,
+            locale: i18n.language,
         };
         let callableName = '';
 

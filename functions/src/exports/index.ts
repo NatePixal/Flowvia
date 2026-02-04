@@ -2,6 +2,8 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { HttpsError } from 'firebase-functions/v1/https';
+import { randomUUID } from 'crypto';
+
 import { exportClientStatementExcel } from "./clientStatement";
 import { exportSupplierStatementExcel } from "./supplierStatement";
 import { exportExpenseStatementExcel } from "./expenseStatement";
@@ -10,23 +12,28 @@ import { exportProductMovementExcel } from "./productMovement";
 if (!admin.apps.length) {
   admin.initializeApp();
 }
+const bucket = admin.storage().bucket();
 
-async function saveToStorageAndSign(buffer: Buffer, filename: string) {
-  const bucket = admin.storage().bucket();
+
+async function saveToStorageAndSign(buffer: Buffer, filename: string): Promise<{ url: string, path: string }> {
   const path = `exports/${Date.now()}_${filename}`;
   const file = bucket.file(path);
+  const token = randomUUID();
 
   await file.save(buffer, {
     resumable: false,
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    metadata: { cacheControl: "private, max-age=60" },
+    metadata: { 
+      cacheControl: "private, max-age=60",
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
   });
-
-  const [url] = await file.getSignedUrl({
-    action: "read",
-    expires: Date.now() + 1000 * 60 * 15, // 15 minutes
-  });
-
+  
+  const encodedPath = encodeURIComponent(path);
+  const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
+  
   return { url, path };
 }
 
@@ -59,10 +66,10 @@ export const exportExpenseStatement = functions.region("us-central1").https.onCa
 });
 
 export const exportProductStatement = functions.region("us-central1").https.onCall(async (data, context) => {
-  if (!data?.companyId || !data?.productId || !data?.from || !data?.to) {
-    throw new HttpsError("invalid-argument", "Missing companyId/productId/from/to");
-  }
-  const buf = await exportProductMovementExcel(data);
-  const out = await saveToStorageAndSign(buf, `product_movement_${data.productId}.xlsx`);
-  return { downloadUrl: out.url };
+    if (!data?.companyId || !data?.productId || !data?.from || !data?.to) {
+        throw new HttpsError("invalid-argument", "Missing companyId/productId/from/to");
+    }
+    const buf = await exportProductMovementExcel(data);
+    const out = await saveToStorageAndSign(buf, `product_movement_${data.productId}.xlsx`);
+    return { downloadUrl: out.url };
 });

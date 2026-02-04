@@ -21,12 +21,11 @@ export async function exportExpenseStatementExcel(input: ExportExpenseInput): Pr
   const db = admin.firestore();
   const range = makeDateRange(input.from, input.to);
 
-  // Expect dailyExpenses docs: companyId, businessDate, category, description, amount, currency, fxRate, reference
-  const expSnap = await db.collection("dailyExpenses")
-    .where("companyId", "==", input.companyId)
-    .where("businessDate", ">=", range.from)
-    .where("businessDate", "<", range.toExclusive)
-    .orderBy("businessDate", "asc")
+  // CORRECTED: Use 'date' field instead of 'businessDate'
+  const expSnap = await db.collection(`companies/${input.companyId}/dailyExpenses`)
+    .where("date", ">=", range.from)
+    .where("date", "<", range.toExclusive)
+    .orderBy("date", "asc")
     .get();
 
   const wb = new ExcelJS.Workbook();
@@ -57,20 +56,21 @@ export async function exportExpenseStatementExcel(input: ExportExpenseInput): Pr
 
   for (const d of expSnap.docs) {
     const x = d.data();
-    const amt = Number(x.amountBase ?? x.amount ?? 0);
+    const amt = Number(x.amountBaseMinor ?? x.amountMinor ?? 0) / 100; // Assuming 2 decimals
     total += amt;
 
     ws.getRow(r).values = [
       "",
-      x.businessDate.toDate().toISOString().slice(0, 10),
-      x.category || "Expense",
+      x.date.toDate(), // Pass date object directly
+      x.expenseType || "Expense",
       x.description || "",
-      x.reference || d.id,
+      d.id,
       amt,
-      x.fxRate ?? x.rate ?? "",
+      x.fx?.rateToBase ?? "",
       x.currency ?? "",
     ];
     styleTableBodyRow(ws, r, 2, 8);
+    ws.getRow(r).getCell(2).numFmt = 'yyyy-mm-dd';
     ws.getRow(r).getCell(6).numFmt = "#,##0.00";
     r++;
   }

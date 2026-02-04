@@ -11,6 +11,7 @@ import {
   styleTableHeader,
   styleTitle,
 } from "./exportUtils";
+import { ClientLedgerEntry } from "../types";
 
 type ExportClientInput = {
   companyId: string;
@@ -18,13 +19,14 @@ type ExportClientInput = {
   currency: string; // e.g. USD
   from: string;     // YYYY-MM-DD
   to: string;       // YYYY-MM-DD
+  locale?: string;
 };
 
 type ClientTxRow = {
   businessDate: admin.firestore.Timestamp;
   description: string;
   reference: string;
-  type: "Purchase" | "Payment" | "Opening";
+  type: "Purchase" | "Payment" | "Opening" | "Adjustment";
   debit: number;   // increases AR
   credit: number;  // decreases AR
   running: number;
@@ -39,45 +41,27 @@ export async function exportClientStatementExcel(input: ExportClientInput): Prom
   const range = makeDateRange(input.from, input.to);
 
   // Client name
-  const clientSnap = await db.collection("clients").doc(input.clientId).get();
+  const clientSnap = await db.doc(`companies/${input.companyId}/clients/${input.clientId}`).get();
   const clientName = clientSnap.exists ? (clientSnap.data()?.name || "Client") : "Client";
 
-  // --- SALES (client purchases) ---
-  // Expect: sales docs contain: companyId, clientId, businessDate, items[{productId, qty, unitPrice}], total, currency, fxRate, invoiceNo
-  const salesSnap = await db.collection("sales")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("businessDate", ">=", range.from)
-    .where("businessDate", "<", range.toExclusive)
-    .orderBy("businessDate", "asc")
+  const ledgerRef = db.collection(`companies/${input.companyId}/clients/${input.clientId}/ledger`);
+
+  const ledgerBeforeSnap = await ledgerRef.where("date", "<", range.from).get();
+  const ledgerRangeSnap = await ledgerRef
+    .where("date", ">=", range.from)
+    .where("date", "<", range.toExclusive)
+    .orderBy("date", "asc")
     .get();
 
-  // --- PAYMENTS (client payments received) ---
-  // Expect: clientPayments docs: companyId, clientId, businessDate, amount, currency, fxRate, reference
-  const paySnap = await db.collection("clientPayments")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("businessDate", ">=", range.from)
-    .where("businessDate", "<", range.toExclusive)
-    .orderBy("businessDate", "asc")
-    .get();
+  let openingBalance = 0;
+  ledgerBeforeSnap.docs.forEach(d => {
+      const entry = d.data() as ClientLedgerEntry;
+      if (entry.currency !== input.currency) return; // Simple filter for now
+      if(entry.type === 'purchase') openingBalance += entry.dueMinor ?? 0;
+      if(entry.type === 'payment') openingBalance -= entry.paymentMinor ?? 0;
+  });
 
-  // Opening balance = sum(sales - payments) before range.from
-  const salesBefore = await db.collection("sales")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("businessDate", "<", range.from)
-    .get();
-
-  const paysBefore = await db.collection("clientPayments")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("businessDate", "<", range.from)
-    .get();
-
-  const sumSalesBefore = salesBefore.docs.reduce((a, d) => a + (Number(d.data().totalBase ?? d.data().total ?? 0)), 0);
-  const sumPaysBefore = paysBefore.docs.reduce((a, d) => a + (Number(d.data().amountBase ?? d.data().amount ?? 0)), 0);
-  let running = sumSalesBefore - sumPaysBefore;
+  let running = openingBalance;
 
   const rows: ClientTxRow[] = [];
   rows.push({
@@ -89,46 +73,38 @@ export async function exportClientStatementExcel(input: ExportClientInput): Prom
     credit: running < 0 ? Math.abs(running) : 0,
     running,
   });
+  
+  for (const doc of ledgerRangeSnap.docs) {
+      const entry = doc.data() as ClientLedgerEntry;
+      if (entry.currency !== input.currency) continue;
 
-  // Convert sales into statement rows (Debit)
-  for (const d of salesSnap.docs) {
-    const s = d.data();
-    const total = Number(s.totalBase ?? s.total ?? 0);
-    const totalQty = Array.isArray(s.items) ? s.items.reduce((a: number, it: any) => a + Number(it.qty ?? 0), 0) : undefined;
-
-    running += total;
-    rows.push({
-      businessDate: s.businessDate,
-      description: s.description || "Product Sale",
-      reference: s.invoiceNo || d.id,
-      type: "Purchase",
-      debit: total,
-      credit: 0,
-      running,
-      qty: totalQty,
-      unitPrice: undefined,
-      fxRate: s.fxRate ?? s.rate ?? undefined,
-      saleCurrency: s.currency ?? undefined,
-    });
+      if (entry.type === 'purchase') {
+          const total = entry.totalMinor ?? 0;
+          running += total;
+          rows.push({
+            businessDate: entry.date as admin.firestore.Timestamp,
+            description: entry.note || "Product Sale",
+            reference: entry.relatedSaleId || doc.id,
+            type: "Purchase",
+            debit: total,
+            credit: 0,
+            running,
+          });
+      } else if (entry.type === 'payment') {
+          const amt = entry.paymentMinor ?? 0;
+          running -= amt;
+           rows.push({
+            businessDate: entry.date as admin.firestore.Timestamp,
+            description: entry.note || "Payment Received",
+            reference: doc.id,
+            type: "Payment",
+            debit: 0,
+            credit: amt,
+            running,
+          });
+      }
   }
 
-  // Convert payments into statement rows (Credit)
-  for (const d of paySnap.docs) {
-    const p = d.data();
-    const amt = Number(p.amountBase ?? p.amount ?? 0);
-    running -= amt;
-    rows.push({
-      businessDate: p.businessDate,
-      description: p.description || "Payment Received",
-      reference: p.reference || d.id,
-      type: "Payment",
-      debit: 0,
-      credit: amt,
-      running,
-      fxRate: p.fxRate ?? p.rate ?? undefined,
-      saleCurrency: p.currency ?? undefined,
-    });
-  }
 
   // Re-sort combined rows by date (opening first)
   const opening = rows.shift()!;
@@ -154,9 +130,6 @@ export async function exportClientStatementExcel(input: ExportClientInput): Prom
   ws.getColumn("F").width = 14; // Debit
   ws.getColumn("G").width = 14; // Credit
   ws.getColumn("H").width = 16; // Running
-  ws.getColumn("I").width = 10; // Qty
-  ws.getColumn("J").width = 12; // FX
-  ws.getColumn("K").width = 10; // Curr
 
   styleTitle(ws, "FlowVia Business Solutions", "Accounts Receivable Statement");
 
@@ -165,58 +138,29 @@ export async function exportClientStatementExcel(input: ExportClientInput): Prom
   styleInfoRow(ws, 7, "Period:", `From ${input.from} to ${input.to}`);
 
   // Summary box (B9:C13)
-  ws.getCell("B9").value = "Opening Balance:";
-  ws.getCell("C9").value = money(opening.running);
-
-  ws.getCell("B10").value = "Total Purchases:";
-  ws.getCell("C10").value = money(totalPurchases);
-
-  ws.getCell("B11").value = "Total Payments:";
-  ws.getCell("C11").value = money(totalPayments);
-
-  ws.getCell("B12").value = "Closing Balance:";
-  ws.getCell("C12").value = money(closing);
-
-  ws.getCell("B13").value = "Total Transactions:";
-  ws.getCell("C13").value = ordered.length - 1;
+  ws.getCell("B9").value = opening.running;
+  ws.getCell("B10").value = totalPurchases;
+  ws.getCell("B11").value = totalPayments;
+  ws.getCell("B12").value = closing;
+  ws.getCell("C9").value = "Opening Balance:";
+  ws.getCell("C10").value = "Total Purchases:";
+  ws.getCell("C11").value = "Total Payments:";
+  ws.getCell("C12").value = "Closing Balance:";
 
   styleSummaryBox(ws);
 
   // Table header
   const headerRow = 15;
-  ws.getRow(headerRow).values = [
-    "",
-    "Date",
-    "Description",
-    "Reference",
-    "Type",
-    "Debit",
-    "Credit",
-    "Running Balance",
-    "Qty",
-    "FX Rate",
-    "Currency",
-  ];
-  styleTableHeader(ws, headerRow, 2, 11);
+  ws.getRow(headerRow).values = ["", "Date", "Description", "Reference", "Type", "Debit", "Credit", "Running Balance"];
+  styleTableHeader(ws, headerRow, 2, 8);
 
   // Body
   let r = headerRow + 1;
   for (const row of ordered) {
     const dt = row.type === "Opening" ? new Date(input.from + "T00:00:00Z") : row.businessDate.toDate();
-    ws.getRow(r).values = [
-      "",
-      dt.toISOString().slice(0, 10),
-      row.description,
-      row.reference,
-      row.type,
-      row.debit || "",
-      row.credit || "",
-      row.running,
-      row.qty ?? "",
-      row.fxRate ?? "",
-      row.saleCurrency ?? "",
-    ];
-    styleTableBodyRow(ws, r, 2, 11);
+    ws.getRow(r).values = ["", dt, row.description, row.reference, row.type, row.debit || "", row.credit || "", row.running];
+    styleTableBodyRow(ws, r, 2, 8);
+    ws.getRow(r).getCell(2).numFmt = 'yyyy-mm-dd';
     ws.getRow(r).getCell(6).numFmt = "#,##0.00";
     ws.getRow(r).getCell(7).numFmt = "#,##0.00";
     ws.getRow(r).getCell(8).numFmt = "#,##0.00";
@@ -224,8 +168,8 @@ export async function exportClientStatementExcel(input: ExportClientInput): Prom
   }
 
   // Totals
-  ws.getRow(r).values = ["", "Total:", "", "", "", totalPurchases, totalPayments, closing, "", "", ""];
-  styleTableBodyRow(ws, r, 2, 11);
+  ws.getRow(r).values = ["", "Total:", "", "", "", totalPurchases, totalPayments, closing];
+  styleTableBodyRow(ws, r, 2, 8);
   ws.getRow(r).getCell(2).font = { bold: true };
   ws.getRow(r).getCell(6).font = { bold: true };
   ws.getRow(r).getCell(7).font = { bold: true };
