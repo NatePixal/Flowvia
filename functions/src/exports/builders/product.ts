@@ -41,14 +41,14 @@ export async function buildProductMovementStatement(params: {
   ]);
 
   const allMovements = [
-    ...incomingSnap.docs.map(d => ({ type: 'IN', doc: d.data(), id: d.id, date: toDate(d.data().incomeDate ?? d.data().date) })),
-    ...salesSnap.docs.map(d => ({ type: 'OUT', doc: d.data(), id: d.id, date: toDate(d.data().date) })),
+    ...incomingSnap.docs.map(d => ({ type: 'IN', doc: d.data(), id: d.id, date: toDate(d.data().businessDate ?? d.data().incomeDate ?? d.data().date) })),
+    ...salesSnap.docs.map(d => ({ type: 'OUT', doc: d.data(), id: d.id, date: toDate(d.data().businessDate ?? d.data().date) })),
   ].filter(m => m.date && m.date >= from && m.date <= to)
    .sort((a, b) => a.date!.getTime() - b.date!.getTime());
 
   // Opening Qty calculation
-  const beforeIncomingSnap = await incomingQuery.where('incomeDate', '<', fromTs).get();
-  const beforeSalesSnap = await salesQuery.where('date', '<', fromTs).get();
+  const beforeIncomingSnap = await incomingQuery.where('businessDate', '<', fromTs).get();
+  const beforeSalesSnap = await salesQuery.where('businessDate', '<', fromTs).get();
   
   let openingQty = 0;
   beforeIncomingSnap.forEach(d => { openingQty += Number(d.data().quantity ?? 0); });

@@ -60,49 +60,69 @@ export const exportStatement = functions
   .https.onCall(async (data, context) => {
     requireAdminOrDev(context);
 
-    const { companyId, statementType, targetId, dateFrom, dateTo } = data || {};
-    if (!companyId || !statementType || !dateFrom || !dateTo) {
-      throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
-    }
+    try {
+      const { companyId, statementType, targetId, dateFrom, dateTo } = data || {};
+      if (!companyId || !statementType || !dateFrom || !dateTo) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+      }
 
-    const baseCurrency = await getCompanyBaseCurrency(companyId);
-    const from = new Date(dateFrom);
-    const to = new Date(dateTo);
+      const baseCurrency = await getCompanyBaseCurrency(companyId);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      
+      if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid dateFrom/dateTo.');
+      }
 
-    if (statementType === 'client') {
-      if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
-      const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
-      const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-      const filePath = `companies/${companyId}/exports/client/${targetId}/client_statement_${Date.now()}.xlsx`;
-      const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-      return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
-    }
-
-    if (statementType === 'supplier') {
-      if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
-      const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
-      const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-      const filePath = `companies/${companyId}/exports/supplier/${targetId}/supplier_statement_${Date.now()}.xlsx`;
-      const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-      return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
-    }
-
-    if (statementType === 'expenses') {
-      const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
-      const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-      const filePath = `companies/${companyId}/exports/expenses/all/expense_statement_${Date.now()}.xlsx`;
-      const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-      return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
-    }
-    
-    if (statementType === 'productMovement') {
-        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
-        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
-        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
-        const filePath = `companies/${companyId}/exports/product/${targetId}/product_statement_${Date.now()}.xlsx`;
+      if (statementType === 'client') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+        const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/client/${targetId}/client_statement_${Date.now()}.xlsx`;
         const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
         return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
-    }
+      }
 
-    throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+      if (statementType === 'supplier') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/supplier/${targetId}/supplier_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      if (statementType === 'expenses') {
+        const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
+        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        const filePath = `companies/${companyId}/exports/expenses/all/expense_statement_${Date.now()}.xlsx`;
+        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+      
+      if (statementType === 'productMovement') {
+          if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+          const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+          const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
+          const filePath = `companies/${companyId}/exports/product/${targetId}/product_statement_${Date.now()}.xlsx`;
+          const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
+          return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+      }
+
+      throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+    } catch (err: any) {
+      console.error('exportStatement error:', err);
+
+      // If it's already a proper HttpsError, just throw it
+      if (err?.constructor?.name === 'HttpsError' || err?.code) {
+        throw err;
+      }
+
+      // Convert unknown crash into visible message
+      throw new functions.https.HttpsError(
+        'internal',
+        err?.message || 'Internal export error',
+        { stack: err?.stack || null }
+      );
+    }
   });
