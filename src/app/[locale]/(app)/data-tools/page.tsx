@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
@@ -16,7 +17,8 @@ import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { add } from "date-fns";
 
-type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement';
+type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
+type StockMode = "range" | "asOfToday" | "both";
 
 async function downloadExcel(firebaseApp: any, callableName: string, payload: any) {
     const functions = getFunctions(firebaseApp, 'us-central1');
@@ -25,7 +27,6 @@ async function downloadExcel(firebaseApp: any, callableName: string, payload: an
     const url = res?.data?.downloadUrl;
     if (!url) throw new Error("No downloadUrl returned from function.");
   
-    // This does NOT get blocked (no popup)
     const a = document.createElement("a");
     a.href = url;
     a.target = "_self";
@@ -34,7 +35,7 @@ async function downloadExcel(firebaseApp: any, callableName: string, payload: an
 }
 
 export default function DataToolsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
   const { toast } = useToast();
   const canExportStatement = userProfile?.role === 'admin' || userProfile?.role === 'developer';
@@ -52,6 +53,7 @@ export default function DataToolsPage() {
   const [selectedClient, setSelectedClient] = useState<string>("");
   const [selectedSupplier, setSelectedSupplier] = useState<string>("");
   const [selectedProduct, setSelectedProduct] = useState<string>("");
+  const [stockMode, setStockMode] = useState<StockMode>("range");
 
   const handleExportStatement = async (statementType: StatementType) => {
     if (!canExportStatement || !companyId || !statementDateRange?.from) return;
@@ -61,6 +63,7 @@ export default function DataToolsPage() {
     const from = statementDateRange.from.toISOString().slice(0, 10);
     const to = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
     const baseCurrency = userProfile?.currency || 'USD';
+    const locale = i18n.language;
 
     try {
         if (statementType === 'client') {
@@ -90,6 +93,8 @@ export default function DataToolsPage() {
             const product = products.find(p => p.id === selectedProduct);
             if (!product) throw new Error("Selected product not found in list.");
             await downloadExcel(firebaseApp, "exportProductStatement", { companyId, productCode: product.productCode, from, to });
+        } else if (statementType === 'stockReport') {
+            await downloadExcel(firebaseApp, "exportStockReport", { companyId, from, to, stockMode, baseCurrency });
         }
 
         toast({ title: 'Export started', description: 'Your file is being generated and will download shortly.' });
@@ -116,6 +121,27 @@ export default function DataToolsPage() {
             <div className="space-y-2">
                 <Label>Date Range</Label>
                 <DateRangePicker date={statementDateRange} onDateChange={setStatementDateRange} />
+            </div>
+
+            {/* Stock & Demand Report */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                <div className="space-y-2">
+                    <Label>Stock & Demand Report</Label>
+                     <Select value={stockMode} onValueChange={(v) => setStockMode(v as StockMode)} disabled={!!exportingType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="range">Date Range Movement</SelectItem>
+                            <SelectItem value="asOfToday">As of Today</SelectItem>
+                            <SelectItem value="both">Both</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex items-end">
+                    <Button onClick={() => handleExportStatement('stockReport')} disabled={!!exportingType || !statementDateRange?.from}>
+                       {exportingType === 'stockReport' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                       Export Stock Report
+                    </Button>
+                </div>
             </div>
 
             {/* Client Statement */}

@@ -1,3 +1,4 @@
+
 import * as admin from "firebase-admin";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
@@ -5,6 +6,7 @@ import { exportClientStatementExcel } from "./exports/clientStatement";
 import { exportSupplierStatementExcel } from "./exports/supplierStatement";
 import { exportExpenseStatementExcel } from "./exports/expenseStatement";
 import { exportProductMovementExcel } from "./exports/productMovement";
+import { exportStockReportExcel } from "./exports/stockReport";
 
 admin.initializeApp();
 setGlobalOptions({ region: "us-central1" });
@@ -66,5 +68,15 @@ export const exportProductStatement = onCall(async (req) => {
   }
   const buf = await exportProductMovementExcel(data);
   const out = await saveToStorageAndSign(buf, `product_movement_${data.productCode}.xlsx`);
+  return { downloadUrl: out.url };
+});
+
+export const exportStockReport = onCall(async (req) => {
+  const d = req.data;
+  if (!d?.companyId || !d?.from || !d?.to || !d?.baseCurrency || !d?.stockMode) {
+    throw new HttpsError("invalid-argument", "Missing companyId/from/to/baseCurrency/stockMode");
+  }
+  const buf = await exportStockReportExcel(d);
+  const out = await saveToStorageAndSign(buf, `stock_${d.stockMode}_${d.from}_${d.to}.xlsx`);
   return { downloadUrl: out.url };
 });
