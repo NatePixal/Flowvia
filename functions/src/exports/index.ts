@@ -57,12 +57,13 @@ function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
  */
 export const exportStatement = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .runWith({ timeoutSeconds: 540, memory: '2GB' })
   .https.onCall(async (data, context) => {
     try {
       requireAdminOrDev(context);
 
-      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode, supplierName, productCode } = data || {};
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
+      
       if (!companyId || !statementType || !dateFrom || !dateTo) {
         throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
       }
@@ -83,8 +84,8 @@ export const exportStatement = functions
       }
 
       if (statementType === 'supplier') {
-        if (!targetId || !supplierName) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId/supplierName for supplier statement.');
-        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, supplierName: supplierName, from, to, baseCurrency });
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
         buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
         filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
@@ -98,8 +99,8 @@ export const exportStatement = functions
       }
 
       if (statementType === 'productMovement') {
-        if (!targetId || !productCode) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId/productCode for product statement.');
-        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, productCode: productCode, from, to, baseCurrency });
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
         buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
         filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };

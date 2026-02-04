@@ -1,85 +1,126 @@
-import ExcelJS from "exceljs";
-import { Timestamp } from "firebase-admin/firestore";
+// functions/src/exports/index.ts
+import * as functions from 'firebase-functions/v1';
+import * as admin from 'firebase-admin';
 
-export type DateRange = { from: Timestamp; toExclusive: Timestamp };
+import { buildStatementWorkbook } from './statement-engine';
+import { buildClientStatement } from './builders/client';
+import { buildSupplierStatement } from './builders/supplier';
+import { buildExpensesStatement } from './builders/expenses';
+import { buildProductMovementStatement } from './builders/product';
+import { exportStockReportExcel } from './stockReport';
+import { Currency } from './types';
 
-export function makeDateRange(fromISO: string, toISO: string): DateRange {
-  // Inclusive day range: [from 00:00, (to+1day) 00:00)
-  const from = new Date(fromISO + "T00:00:00.000Z");
-  const to = new Date(toISO + "T00:00:00.000Z");
-  const toExclusive = new Date(to);
-  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
-  return {
-    from: Timestamp.fromDate(from),
-    toExclusive: Timestamp.fromDate(toExclusive),
-  };
+if (!admin.apps.length) {
+  admin.initializeApp();
 }
 
-export function moneyFromMinor(minor: number, decimals = 2): string {
-  const major = minor / Math.pow(10, decimals);
-  return major.toLocaleString(undefined, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+const db = admin.firestore();
+
+function requireAdminOrDev(context: functions.https.CallableContext) {
+  const role = context.auth?.token?.role;
+  if (!context.auth || (role !== 'admin' && role !== 'developer')) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
+  }
+}
+
+async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
+  const snap = await db.doc(`companies/${companyId}`).get();
+  const base = (snap.data() as any)?.baseCurrency;
+  return (base || 'USD') as Currency;
+}
+
+function bufferToBase64(buf: Buffer) {
+  return buf.toString('base64');
+}
+
+
+// --- helpers for deterministic error surfacing ---
+function isHttpsError(err: any): err is functions.https.HttpsError {
+  return err instanceof functions.https.HttpsError || err?.constructor?.name === 'HttpsError';
+}
+
+function looksLikeMissingIndex(err: any): boolean {
+  const msg = String(err?.message || '');
+  // Covers: "The query requires an index. You can create it here: ..."
+  return /requires an index|create.*index|create_composite/i.test(msg);
+}
+
+const ALLOWED_CODES = new Set(['cancelled', 'unknown', 'invalid-argument', 'deadline-exceeded', 'not-found', 'already-exists', 'permission-denied', 'unauthenticated', 'resource-exhausted', 'failed-precondition', 'aborted', 'out-of-range', 'unimplemented', 'internal', 'unavailable', 'data-loss']);
+
+function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
+  const c = typeof code === 'string' ? code : '';
+  return (ALLOWED_CODES.has(c) ? c : 'internal') as functions.https.FunctionsErrorCode;
+}
+
+/**
+ * Generic dispatcher for your UI convenience.
+ */
+export const exportStatement = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '2GB' })
+  .https.onCall(async (data, context) => {
+    try {
+      requireAdminOrDev(context);
+
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
+      
+      if (!companyId || !statementType || !dateFrom || !dateTo) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+      }
+
+      const baseCurrency = await getCompanyBaseCurrency(companyId);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      
+      let buf: Buffer;
+      let filename: string;
+
+      if (statementType === 'client') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+        const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'supplier') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'expenses') {
+        const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'productMovement') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
+        filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'stockReport' || statementType === 'stock') {
+        if (!stockMode) throw new functions.https.HttpsError('invalid-argument', 'Missing stockMode for stock report.');
+        buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+        filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
+      }
+      
+      throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+
+    } catch (err: any) {
+      console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
+      if (isHttpsError(err)) throw err;
+      if (looksLikeMissingIndex(err)) {
+        throw new functions.https.HttpsError('failed-precondition', 'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.', { originalCode: err?.code, originalMessage: String(err?.message || '') });
+      }
+      throw new functions.https.HttpsError(normalizeHttpsCode(err?.code), String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String(err?.message || '') });
+    }
   });
-}
-
-export function applyGlobalWorkbookStyle(wb: ExcelJS.Workbook) {
-  wb.creator = "FlowVia";
-  wb.created = new Date();
-}
-
-// --- styling helpers (same as before) ---
-export function setSheetPrintDefaults(ws: ExcelJS.Worksheet) {
-  ws.pageSetup = { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-  ws.views = [{ state: "frozen", ySplit: 12 }];
-}
-
-export function styleTitle(ws: ExcelJS.Worksheet, title: string, subtitle: string) {
-  ws.mergeCells("B2:H2");
-  ws.mergeCells("B3:H3");
-  ws.getCell("B2").value = title;
-  ws.getCell("B2").font = { bold: true, size: 14, color: { argb: "1F2937" } };
-  ws.getCell("B2").alignment = { horizontal: "center", vertical: "middle" };
-  ws.getCell("B3").value = subtitle;
-  ws.getCell("B3").font = { bold: true, size: 11, color: { argb: "374151" } };
-  ws.getCell("B3").alignment = { horizontal: "center", vertical: "middle" };
-}
-
-export function styleInfoRow(ws: ExcelJS.Worksheet, row: number, label: string, value: string) {
-  ws.getCell(`B${row}`).value = label;
-  ws.getCell(`B${row}`).font = { bold: true, size: 10, color: { argb: "111827" } };
-  ws.getCell(`C${row}`).value = value;
-  ws.getCell(`C${row}`).font = { size: 10, color: { argb: "111827" } };
-}
-
-export function styleSummaryBox(ws: ExcelJS.Worksheet) {
-  const boxFill = { type: "pattern", pattern: "solid", fgColor: { argb: "1E5AA8" } };
-  const labelFont = { bold: true, size: 10, color: { argb: "FFFFFF" } };
-  const valFont = { bold: true, size: 10, color: { argb: "111827" } };
-
-  for (let r = 7; r <= 11; r++) {
-    ws.getCell(`B${r}`).fill = boxFill as any;
-    ws.getCell(`B${r}`).font = labelFont;
-    ws.getCell(`B${r}`).alignment = { vertical: "middle" };
-    ws.getCell(`C${r}`).font = valFont;
-    ws.getCell(`C${r}`).alignment = { vertical: "middle", horizontal: "right" };
-  }
-}
-
-export function styleTableHeader(ws: ExcelJS.Worksheet, row: number, fromCol: number, toCol: number) {
-  for (let c = fromCol; c <= toCol; c++) {
-    const cell = ws.getRow(row).getCell(c);
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "1E5AA8" } } as any;
-    cell.font = { bold: true, color: { argb: "FFFFFF" }, size: 10 };
-    cell.alignment = { vertical: "middle", horizontal: "center" };
-  }
-  ws.getRow(row).height = 18;
-}
-
-export function styleTableBodyRow(ws: ExcelJS.Worksheet, row: number, fromCol: number, toCol: number) {
-  for (let c = fromCol; c <= toCol; c++) {
-    const cell = ws.getRow(row).getCell(c);
-    cell.font = { size: 10, color: { argb: "111827" } };
-    cell.alignment = { vertical: "middle" };
-  }
-}
