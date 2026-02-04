@@ -1,6 +1,5 @@
+
 // functions/src/exports/types.ts
-// THIS FILE IS A PLACEHOLDER. ITS ORIGINAL CONTENT WAS NOT AVAILABLE.
-// Please provide the correct source code to restore its functionality.
 
 export type Currency = 'USD' | 'AED' | 'UZS' | 'CNY';
 export type StatementCurrency = Currency | 'QTY';

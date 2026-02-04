@@ -20,7 +20,10 @@ import { add } from "date-fns";
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
 type StockMode = "range" | "asOfToday" | "both";
 
-async function downloadExcelFromBase64(base64: string, filename: string, mimeType: string) {
+async function downloadExcel(base64: string, filename: string, mimeType: string) {
+    if (!base64) {
+      throw new Error("Invalid response from server: base64 data is missing.");
+    }
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -70,38 +73,30 @@ export default function DataToolsPage() {
     const baseCurrency = userProfile?.currency || 'USD';
     const locale = i18n.language;
     
-    const payload: any = { companyId, dateFrom: fromISO, dateTo: toISO, baseCurrency, locale };
+    const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO, baseCurrency, locale };
 
     try {
         if (statementType === 'client') {
             if (!selectedClient) {
                 toast({ variant: 'destructive', title: 'Client not selected' }); return;
             }
-            payload.statementType = 'client';
-            payload.clientId = selectedClient;
+            payload.targetId = selectedClient;
 
         } else if (statementType === 'supplier') {
             if (!selectedSupplier) {
                 toast({ variant: 'destructive', title: 'Supplier not selected' }); return;
             }
-            const supplier = suppliers.find(s => s.id === selectedSupplier);
-            payload.statementType = 'supplier';
-            payload.supplierId = selectedSupplier;
-            payload.supplierName = supplier?.name;
+            payload.targetId = selectedSupplier;
 
         } else if (statementType === 'expenses') {
-             payload.statementType = 'expenses';
+             // No extra payload needed
         } else if (statementType === 'productMovement') {
             if (!selectedProduct) {
                 toast({ variant: 'destructive', title: 'Product not selected' }); return;
             }
-            const product = products.find(p => p.id === selectedProduct);
-            payload.statementType = 'product';
-            payload.productId = selectedProduct;
-            payload.productCode = product?.productCode;
+            payload.targetId = selectedProduct;
 
         } else if (statementType === 'stockReport') {
-            payload.statementType = 'stock';
             payload.stockMode = stockMode;
         }
 
@@ -109,12 +104,12 @@ export default function DataToolsPage() {
         const exportFn = httpsCallable(functions, 'exportStatement');
         const result: any = await exportFn(payload);
         
-        const { base64, filename, mimeType } = result.data;
-        if (!base64 || !filename || !mimeType) {
-            throw new Error("Invalid response from server. Export failed.");
+        const { base64, filename, mimeType, warnings } = result.data;
+        if (warnings && warnings.length > 0) {
+          toast({ variant: 'destructive', title: 'Export Warnings', description: warnings.join('\n') });
         }
 
-        await downloadExcelFromBase64(base64, filename, mimeType);
+        await downloadExcel(base64, filename, mimeType);
         toast({ title: 'Export Complete', description: 'Your file has started downloading.' });
     } catch (err: any) {
         console.error('Statement export failed:', err);

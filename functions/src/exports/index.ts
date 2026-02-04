@@ -1,13 +1,14 @@
+
 // functions/src/exports/index.ts
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
-import { randomUUID } from 'crypto';
 
 import { buildStatementWorkbook } from './statement-engine';
 import { buildClientStatement } from './builders/client';
 import { buildSupplierStatement } from './builders/supplier';
 import { buildExpensesStatement } from './builders/expenses';
 import { buildProductMovementStatement } from './builders/product';
+import { exportStockReportExcel } from './stockReport';
 import { Currency } from './types';
 
 if (!admin.apps.length) {
@@ -15,7 +16,6 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
-const bucket = admin.storage().bucket();
 
 function requireAdminOrDev(context: functions.https.CallableContext) {
   const role = context.auth?.token?.role;
@@ -30,34 +30,8 @@ async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
   return (base || 'USD') as Currency;
 }
 
-async function saveWorkbookAndSign(params: {
-  companyId: string;
-  filePath: string;
-  buffer: Buffer;
-}): Promise<{ downloadUrl: string; filePath: string }> {
-  const file = bucket.file(params.filePath);
-
-  // Firebase download token (works even if signBlob is denied)
-  const token = randomUUID();
-
-  await file.save(params.buffer, {
-    resumable: false,
-    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    metadata: {
-      cacheControl: 'private, max-age=0, no-transform',
-      // IMPORTANT: custom metadata map must be nested under "metadata"
-      metadata: {
-        firebaseStorageDownloadTokens: token,
-      },
-    },
-  });
-
-  // Build Firebase token download URL (no signing required)
-  const encodedPath = encodeURIComponent(params.filePath);
-  const downloadUrl =
-    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${token}`;
-
-  return { downloadUrl, filePath: params.filePath };
+function bufferToBase64(buf: Buffer) {
+  return buf.toString('base64');
 }
 
 
@@ -72,25 +46,7 @@ function looksLikeMissingIndex(err: any): boolean {
   return /requires an index|create.*index|create_composite/i.test(msg);
 }
 
-// Allowed codes for HttpsError (defensive)
-const ALLOWED_CODES = new Set([
-  'cancelled',
-  'unknown',
-  'invalid-argument',
-  'deadline-exceeded',
-  'not-found',
-  'already-exists',
-  'permission-denied',
-  'unauthenticated',
-  'resource-exhausted',
-  'failed-precondition',
-  'aborted',
-  'out-of-range',
-  'unimplemented',
-  'internal',
-  'unavailable',
-  'data-loss',
-]);
+const ALLOWED_CODES = new Set(['cancelled', 'unknown', 'invalid-argument', 'deadline-exceeded', 'not-found', 'already-exists', 'permission-denied', 'unauthenticated', 'resource-exhausted', 'failed-precondition', 'aborted', 'out-of-range', 'unimplemented', 'internal', 'unavailable', 'data-loss']);
 
 function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
   const c = typeof code === 'string' ? code : '';
@@ -107,79 +63,65 @@ export const exportStatement = functions
     try {
       requireAdminOrDev(context);
 
-      const { companyId, statementType, targetId, dateFrom, dateTo } = data || {};
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale } = data || {};
       if (!companyId || !statementType || !dateFrom || !dateTo) {
-        throw new functions.https.HttpsError(
-          'invalid-argument',
-          'Missing companyId/statementType/dateFrom/dateTo.'
-        );
+        throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
       }
 
       const baseCurrency = await getCompanyBaseCurrency(companyId);
       const from = new Date(dateFrom);
       const to = new Date(dateTo);
+      
+      let buf: Buffer;
+      let filename: string;
 
       if (statementType === 'client') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
         const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
-        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-        const filePath = `companies/${companyId}/exports/client/${targetId}/client_statement_${Date.now()}.xlsx`;
-        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
       if (statementType === 'supplier') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
         const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
-        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-        const filePath = `companies/${companyId}/exports/supplier/${targetId}/supplier_statement_${Date.now()}.xlsx`;
-        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
       if (statementType === 'expenses') {
         const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
-        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency });
-        const filePath = `companies/${companyId}/exports/expenses/all/expense_statement_${Date.now()}.xlsx`;
-        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
       if (statementType === 'productMovement') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
         const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
-        const buffer = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
-        const filePath = `companies/${companyId}/exports/product/${targetId}/product_statement_${Date.now()}.xlsx`;
-        const saved = await saveWorkbookAndSign({ companyId, filePath, buffer });
-        return { success: true, downloadUrl: saved.downloadUrl, filePath: saved.filePath, warnings: summary.warnings };
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
+        filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
+      if (statementType === 'stockReport') {
+        const { stockMode } = data;
+        if (!stockMode) throw new functions.https.HttpsError('invalid-argument', 'Missing stockMode for stock report.');
+        buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+        filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
+      }
+      
       throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+
     } catch (err: any) {
-      // Log full backend error for console visibility
-      console.error('exportStatement failed:', {
-        code: err?.code,
-        message: err?.message,
-        stack: err?.stack,
-      });
-
-      // Re-throw only real HttpsError
+      console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
       if (isHttpsError(err)) throw err;
-
-      // Missing index (or index still building) is the #1 Firestore export crash
       if (looksLikeMissingIndex(err)) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.',
-          { originalCode: err?.code, originalMessage: String(err?.message || '') }
-        );
+        throw new functions.https.HttpsError('failed-precondition', 'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.', { originalCode: err?.code, originalMessage: String(err?.message || '') });
       }
-
-      // Wrap everything else
-      throw new functions.https.HttpsError(
-        normalizeHttpsCode(err?.code),
-        String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'),
-        { originalCode: err?.code, originalMessage: String(err?.message || '') }
-      );
+      throw new functions.https.HttpsError(normalizeHttpsCode(err?.code), String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String(err?.message || '') });
     }
   });
