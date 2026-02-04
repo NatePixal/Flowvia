@@ -18,6 +18,21 @@ import { add } from "date-fns";
 
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement';
 
+async function downloadExcel(firebaseApp: any, callableName: string, payload: any) {
+    const functions = getFunctions(firebaseApp, 'us-central1');
+    const fn = httpsCallable(functions, callableName);
+    const res: any = await fn(payload);
+    const url = res?.data?.downloadUrl;
+    if (!url) throw new Error("No downloadUrl returned from function.");
+  
+    // This does NOT get blocked (no popup)
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_self";
+    a.rel = "noreferrer";
+    a.click();
+}
+
 export default function DataToolsPage() {
   const { t } = useTranslation();
   const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
@@ -41,45 +56,43 @@ export default function DataToolsPage() {
   const handleExportStatement = async (statementType: StatementType) => {
     if (!canExportStatement || !companyId || !statementDateRange?.from) return;
 
-    let targetId: string | undefined = undefined;
-
-    if (statementType === 'client') targetId = selectedClient;
-    if (statementType === 'supplier') targetId = selectedSupplier;
-    if (statementType === 'productMovement') targetId = selectedProduct;
-    
-    if ((statementType === 'client' || statementType === 'supplier' || statementType === 'productMovement') && !targetId) {
-        toast({ variant: 'destructive', title: 'Target Required', description: `Please select a ${statementType}.` });
-        return;
-    }
-
     setExportingType(statementType);
+    
+    const from = statementDateRange.from.toISOString().slice(0, 10);
+    const to = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
+    const baseCurrency = userProfile?.currency || 'USD';
+
     try {
-        const functions = getFunctions(firebaseApp, 'us-central1');
-        const exportStatementFn = httpsCallable(functions, 'exportStatement');
-        
-        const result: any = await exportStatementFn({
-            companyId,
-            statementType,
-            targetId,
-            dateFrom: statementDateRange.from.toISOString(),
-            dateTo: (statementDateRange.to || statementDateRange.from).toISOString(),
-        });
-        
-        if (result.data.success && result.data.downloadUrl) {
-            window.open(result.data.downloadUrl, '_blank');
-            toast({ title: 'Export Complete', description: 'Your statement is downloading.' });
-            if (result.data.warnings?.length > 0) {
-              toast({
-                variant: "destructive",
-                title: "Export Warnings",
-                description: result.data.warnings.join("\n"),
-                duration: 10000,
-              });
+        if (statementType === 'client') {
+            if (!selectedClient) {
+                toast({ variant: 'destructive', title: 'Client not selected' });
+                return;
             }
-        } else {
-            throw new Error(result.data.error || 'Failed to generate statement.');
+            await downloadExcel(firebaseApp, "exportClientStatement", { companyId, clientId: selectedClient, from, to, baseCurrency });
+
+        } else if (statementType === 'supplier') {
+            if (!selectedSupplier) {
+                toast({ variant: 'destructive', title: 'Supplier not selected' });
+                return;
+            }
+            const supplier = suppliers.find(s => s.id === selectedSupplier);
+            if (!supplier) throw new Error("Selected supplier not found in list.");
+            await downloadExcel(firebaseApp, "exportSupplierStatement", { companyId, supplierId: selectedSupplier, supplierName: supplier.name, from, to, baseCurrency });
+
+        } else if (statementType === 'expenses') {
+            await downloadExcel(firebaseApp, "exportExpenseStatement", { companyId, from, to, baseCurrency });
+
+        } else if (statementType === 'productMovement') {
+            if (!selectedProduct) {
+                toast({ variant: 'destructive', title: 'Product not selected' });
+                return;
+            }
+            const product = products.find(p => p.id === selectedProduct);
+            if (!product) throw new Error("Selected product not found in list.");
+            await downloadExcel(firebaseApp, "exportProductStatement", { companyId, productCode: product.productCode, from, to });
         }
 
+        toast({ title: 'Export started', description: 'Your file is being generated and will download shortly.' });
     } catch (err: any) {
         console.error('Statement export failed:', err);
         toast({ variant: 'destructive', title: 'Export Failed', description: err.message });
