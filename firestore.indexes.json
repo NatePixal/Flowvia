@@ -39,6 +39,14 @@
         { "fieldPath": "productId", "order": "ASCENDING" },
         { "fieldPath": "businessDate", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "fxSnapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "baseCurrency", "order": "ASCENDING" },
+        { "fieldPath": "asOf", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

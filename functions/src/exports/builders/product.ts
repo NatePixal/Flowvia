@@ -98,7 +98,7 @@ export async function buildProductMovementStatement(params: {
       description,
       reference: m.id,
       type: m.kind === 'IN' ? 'Incoming' : 'Sale',
-      currency: 'QTY' as any, // your types should include QTY; keep as any if not
+      currency: 'QTY',
       debitOrig: qtyIn,
       creditOrig: qtyOut,
       debitBase: qtyIn,
@@ -113,7 +113,7 @@ export async function buildProductMovementStatement(params: {
     periodFrom: from,
     periodTo: to,
     entityLabel: `Product: ${productName} (${productCode})`,
-    baseCurrency: 'QTY' as any,
+    baseCurrency: 'QTY',
     openingBase: openingQty,
     totalDebitBase: rows.reduce((s, r) => s + (r.debitBase || 0), 0),
     totalCreditBase: rows.reduce((s, r) => s + (r.creditBase || 0), 0),
@@ -125,7 +125,7 @@ export async function buildProductMovementStatement(params: {
         debit: rows.reduce((s, r) => s + (r.debitOrig || 0), 0),
         credit: rows.reduce((s, r) => s + (r.creditOrig || 0), 0),
       },
-    } as any,
+    },
   };
 
   return { summary, rows };
