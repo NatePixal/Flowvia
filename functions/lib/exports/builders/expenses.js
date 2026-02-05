@@ -2,10 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildExpensesStatement = buildExpensesStatement;
 // functions/src/exports/builders/expenses.ts
-const admin = require("firebase-admin");
+const firestore_1 = require("firebase-admin/firestore");
+const admin_1 = require("../../admin");
 const fx_1 = require("../fx");
 const money_1 = require("../money");
-const db = admin.firestore();
 function toDate(v) {
     if (!v)
         return null;
@@ -20,11 +20,11 @@ async function buildExpensesStatement(params) {
     var _a, _b, _c, _d, _e, _f;
     const { companyId, from, to, baseCurrency } = params;
     // Adjust collection name if needed (dailyExpenses vs expenses)
-    const ref = db.collection(`companies/${companyId}/dailyExpenses`);
+    const ref = admin_1.db.collection(`companies/${companyId}/dailyExpenses`);
     // BUSINESS date field required:
     const DATE_FIELD = 'businessDate';
-    const fromTs = admin.firestore.Timestamp.fromDate(from);
-    const toTs = admin.firestore.Timestamp.fromDate(to);
+    const fromTs = firestore_1.Timestamp.fromDate(from);
+    const toTs = firestore_1.Timestamp.fromDate(to);
     const rangeSnap = await ref
         .where(DATE_FIELD, '>=', fromTs)
         .where(DATE_FIELD, '<=', toTs)

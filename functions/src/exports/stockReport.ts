@@ -1,3 +1,5 @@
+
+import * as admin from "firebase-admin";
 import * as ExcelJS from "exceljs";
 
 type StockRow = {
@@ -119,18 +121,20 @@ function zebraAndBorders(ws: ExcelJS.Worksheet, startRow: number) {
 
 function autoFit(ws: ExcelJS.Worksheet) {
   ws.columns.forEach((col) => {
-    let max = 10;
-    col.eachCell({ includeEmpty: true }, (cell) => {
-      const v = cell.value as any;
-      const text =
-        v == null
-          ? ""
-          : typeof v === "object" && "richText" in v
-          ? JSON.stringify(v)
-          : String(v);
-      max = Math.max(max, text.length);
-    });
-    col.width = Math.min(45, max + 2);
+    if (col) {
+      let max = 10;
+      col.eachCell({ includeEmpty: true }, (cell) => {
+        const v = cell.value as any;
+        const text =
+          v == null
+            ? ""
+            : typeof v === "object" && "richText" in v
+            ? JSON.stringify(v)
+            : String(v);
+        max = Math.max(max, text.length);
+      });
+      col.width = Math.min(45, max + 2);
+    }
   });
 }
 

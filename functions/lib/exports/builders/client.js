@@ -2,10 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildClientStatement = buildClientStatement;
 // functions/src/exports/builders/client.ts
-const admin = require("firebase-admin");
+const firestore_1 = require("firebase-admin/firestore");
+const admin_1 = require("../../admin");
 const fx_1 = require("../fx");
 const money_1 = require("../money");
-const db = admin.firestore();
 function toDate(v) {
     if (!v)
         return null;
@@ -19,16 +19,16 @@ function toDate(v) {
 async function buildClientStatement(params) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { companyId, clientId, from, to, baseCurrency } = params;
-    const clientRef = db.doc(`companies/${companyId}/clients/${clientId}`);
+    const clientRef = admin_1.db.doc(`companies/${companyId}/clients/${clientId}`);
     const clientSnap = await clientRef.get();
     const clientName = ((_a = clientSnap.data()) === null || _a === void 0 ? void 0 : _a.name) || clientId;
-    const ledgerRef = db.collection(`companies/${companyId}/clients/${clientId}/ledger`);
+    const ledgerRef = admin_1.db.collection(`companies/${companyId}/clients/${clientId}/ledger`);
     // IMPORTANT: ideally ledger should have businessDate.
     // If not, you must adapt the query field to your model.
     const DATE_FIELD = 'businessDate'; // preferred
     // Fallback: if your ledger doesn't have businessDate, use 'createdAt' and accept limitations.
-    const fromTs = admin.firestore.Timestamp.fromDate(from);
-    const toTs = admin.firestore.Timestamp.fromDate(to);
+    const fromTs = firestore_1.Timestamp.fromDate(from);
+    const toTs = firestore_1.Timestamp.fromDate(to);
     // Opening: all entries before "from"
     const beforeSnap = await ledgerRef.where(DATE_FIELD, '<', fromTs).get();
     // In-range: entries between from..to ordered

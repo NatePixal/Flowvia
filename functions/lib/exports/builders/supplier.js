@@ -2,10 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSupplierStatement = buildSupplierStatement;
 // functions/src/exports/builders/supplier.ts
-const admin = require("firebase-admin");
+const firestore_1 = require("firebase-admin/firestore");
+const admin_1 = require("../../admin");
 const fx_1 = require("../fx");
 const money_1 = require("../money");
-const db = admin.firestore();
 function toDate(v) {
     if (!v)
         return null;
@@ -19,13 +19,13 @@ function toDate(v) {
 async function buildSupplierStatement(params) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { companyId, supplierId, from, to, baseCurrency } = params;
-    const supplierRef = db.doc(`companies/${companyId}/suppliers/${supplierId}`);
+    const supplierRef = admin_1.db.doc(`companies/${companyId}/suppliers/${supplierId}`);
     const supplierSnap = await supplierRef.get();
     const supplierName = ((_a = supplierSnap.data()) === null || _a === void 0 ? void 0 : _a.name) || supplierId;
-    const ledgerRef = db.collection(`companies/${companyId}/suppliers/${supplierId}/ledger`);
+    const ledgerRef = admin_1.db.collection(`companies/${companyId}/suppliers/${supplierId}/ledger`);
     const DATE_FIELD = 'businessDate'; // preferred
-    const fromTs = admin.firestore.Timestamp.fromDate(from);
-    const toTs = admin.firestore.Timestamp.fromDate(to);
+    const fromTs = firestore_1.Timestamp.fromDate(from);
+    const toTs = firestore_1.Timestamp.fromDate(to);
     const beforeSnap = await ledgerRef.where(DATE_FIELD, '<', fromTs).get();
     const rangeSnap = await ledgerRef
         .where(DATE_FIELD, '>=', fromTs)

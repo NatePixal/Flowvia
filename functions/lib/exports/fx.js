@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveFxToBase = resolveFxToBase;
 // functions/src/exports/fx.ts
-const admin = require("firebase-admin");
-const db = admin.firestore();
+const firestore_1 = require("firebase-admin/firestore");
+const admin_1 = require("../admin");
 function toDateSafe(v) {
     if (!v)
         return null;
@@ -33,10 +33,10 @@ async function resolveFxToBase(params) {
     }
     // Fallback snapshot lookup:
     // companies/{companyId}/fxSnapshots : { asOf, baseCurrency, ratesToBase{USD:1, UZS:..., AED:...} }
-    const snap = await db
+    const snap = await admin_1.db
         .collection(`companies/${companyId}/fxSnapshots`)
         .where('baseCurrency', '==', baseCurrency)
-        .where('asOf', '<=', admin.firestore.Timestamp.fromDate(txDate))
+        .where('asOf', '<=', firestore_1.Timestamp.fromDate(txDate))
         .orderBy('asOf', 'desc')
         .limit(1)
         .get();

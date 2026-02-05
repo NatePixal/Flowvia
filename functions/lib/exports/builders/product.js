@@ -2,8 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildProductMovementStatement = buildProductMovementStatement;
 // functions/src/exports/builders/product.ts
-const admin = require("firebase-admin");
-const db = admin.firestore();
+const admin_1 = require("../../admin");
 function toDate(v) {
     if (!v)
         return null;
@@ -17,14 +16,14 @@ function toDate(v) {
 async function buildProductMovementStatement(params) {
     const { companyId, productId, from, to } = params;
     // 1) Load product to get productCode
-    const productRef = db.doc(`companies/${companyId}/products/${productId}`);
+    const productRef = admin_1.db.doc(`companies/${companyId}/products/${productId}`);
     const productSnap = await productRef.get();
     const productData = productSnap.data() || {};
     const productCode = productData.productCode || productId; // fallback
     const productName = productData.name || productCode;
     // 2) Read movements for THIS product
-    const incomingRef = db.collection(`companies/${companyId}/incomingProducts`);
-    const salesRef = db.collection(`companies/${companyId}/sales`);
+    const incomingRef = admin_1.db.collection(`companies/${companyId}/incomingProducts`);
+    const salesRef = admin_1.db.collection(`companies/${companyId}/sales`);
     const [incomingSnap, salesSnap] = await Promise.all([
         incomingRef.where('productCode', '==', productCode).get(),
         salesRef.where('productId', '==', productId).get(),

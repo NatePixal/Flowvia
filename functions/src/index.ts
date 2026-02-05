@@ -117,7 +117,7 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
                 "Unit Sale Price": 3,
                 "Exchange Rate (Day of Purchase)": 1,
                 "Total Amount Due": 15,
-                "Payment Status": "Loan",
+                "Payment Status": "Loan" as const,
               },
             ];
 
