@@ -105,13 +105,13 @@ const FinancialOverview = memo(function FinancialOverview() {
   }, [sales, expenses]);
 
   const EXPENSE_CHART_CONFIG: ChartConfig = {
-    salary: { label: t("expenses.salary"), color: "hsl(var(--chart-1))" },
-    rent: { label: t("expenses.rent"), color: "hsl(var(--chart-2))" },
-    utilities: { label: t("expenses.utilities"), color: "hsl(var(--chart-3))" },
-    marketing: { label: t("expenses.marketing"), color: "hsl(var(--chart-4))" },
-    food: { label: t("expenses.food"), color: "hsl(var(--chart-5))" },
-    transport: { label: t("expenses.transport"), color: "hsl(var(--chart-1))" },
-    others: { label: t("expenses.others"), color: "hsl(var(--muted))" },
+    salary: { label: t("expenses.salary"), color: "#1E5EFF" },
+    rent: { label: t("expenses.rent"), color: "#38BDF8" },
+    utilities: { label: t("expenses.utilities"), color: "#0EA5A5" },
+    marketing: { label: t("expenses.marketing"), color: "#E11D48" },
+    food: { label: t("expenses.food"), color: "#F59E0B" },
+    transport: { label: t("expenses.transport"), color: "#6366F1" },
+    others: { label: t("expenses.others"), color: "#64748B" },
   };
 
   return (
