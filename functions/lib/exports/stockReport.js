@@ -76,17 +76,19 @@ function zebraAndBorders(ws, startRow) {
 }
 function autoFit(ws) {
     ws.columns.forEach((col) => {
-        let max = 10;
-        col.eachCell({ includeEmpty: true }, (cell) => {
-            const v = cell.value;
-            const text = v == null
-                ? ""
-                : typeof v === "object" && "richText" in v
-                    ? JSON.stringify(v)
-                    : String(v);
-            max = Math.max(max, text.length);
-        });
-        col.width = Math.min(45, max + 2);
+        if (col) {
+            let max = 10;
+            col.eachCell({ includeEmpty: true }, (cell) => {
+                const v = cell.value;
+                const text = v == null
+                    ? ""
+                    : typeof v === "object" && "richText" in v
+                        ? JSON.stringify(v)
+                        : String(v);
+                max = Math.max(max, text.length);
+            });
+            col.width = Math.min(45, max + 2);
+        }
     });
 }
 function setColumnFormats(ws, headers) {
