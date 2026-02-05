@@ -115,6 +115,7 @@ export type Sale = {
   isDeleted?: boolean;
   deletedAt?: FirestoreTs;
   deletedBy?: string;
+  createdBy?: string;
   
   // Base currency of the company at the time of sale
   baseCurrency?: Currency;
@@ -181,6 +182,8 @@ export type ClientLedgerEntry = {
   // Metadata
   relatedSaleId?: string;
   note?: string;
+  legacy?: boolean;
+  businessDate?: FirestoreTs;
   
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
@@ -195,6 +198,7 @@ export type Supplier = {
   name: string;
   email?: string;
   phone?: string;
+  factoryName?: string;
   createdAt?: FirestoreTs;
   // Derived fields
   balanceDueByCurrency?: { [key in Currency]?: number };
@@ -224,6 +228,7 @@ export type SupplierLedgerEntry = {
 
   note?: string;
   createdAt: FirestoreTs;               // Firestore Timestamp
+  businessDate?: FirestoreTs;
   relatedIncomingLogId?: string; // Link to the incoming stock log
 };
 
@@ -254,14 +259,14 @@ export type IncomingProductLog = {
   totalCost: number;    // major (quantity * unitCost)
 
   // Receipt amounts (minor)
-  unitCostMinor?: number;
-  totalCostMinor?: number;
+  unitCostMinor: number;
+  totalCostMinor: number;
 
   // Base amounts (minor)
   baseCurrency: Currency;
   fx?: FxSnapshot;              // only if currency != baseCurrency
-  unitCostBaseMinor?: number;
-  totalCostBaseMinor?: number;
+  unitCostBaseMinor: number;
+  totalCostBaseMinor: number;
 
   // Optional UI/legacy fields if you want:
   name?: string;
