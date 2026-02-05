@@ -57,7 +57,7 @@ function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
  */
 export const exportStatement = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 540, memory: '2GB' })
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onCall(async (data, context) => {
     try {
       requireAdminOrDev(context);
@@ -78,7 +78,7 @@ export const exportStatement = functions
       if (statementType === 'client') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
         const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
-        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
         filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
@@ -86,14 +86,14 @@ export const exportStatement = functions
       if (statementType === 'supplier') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
         const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
-        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
         filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
 
       if (statementType === 'expenses') {
         const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
-        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
         filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }
@@ -101,7 +101,7 @@ export const exportStatement = functions
       if (statementType === 'productMovement') {
         if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
         const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
-        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
         filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
         return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
       }

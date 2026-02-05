@@ -1,239 +1,126 @@
-import * as admin from "firebase-admin";
-import ExcelJS from "exceljs";
-import {
-  applyGlobalWorkbookStyle,
-  makeDateRange,
-  moneyFromMinor,
-  setSheetPrintDefaults,
-  styleInfoRow,
-  styleSummaryBox,
-  styleTableBodyRow,
-  styleTableHeader,
-  styleTitle,
-} from "./exportUtils";
+// functions/src/exports/index.ts
+import * as functions from 'firebase-functions/v1';
+import * as admin from 'firebase-admin';
 
-type ExportClientInput = {
-  companyId: string;
-  clientId: string;
-  baseCurrency: string; // e.g. USD
-  from: string;     // YYYY-MM-DD
-  to: string;       // YYYY-MM-DD
-};
+import { buildStatementWorkbook } from './statement-engine';
+import { buildClientStatement } from './builders/client';
+import { buildSupplierStatement } from './builders/supplier';
+import { buildExpensesStatement } from './builders/expenses';
+import { buildProductMovementStatement } from './builders/product';
+import { exportStockReportExcel } from './stockReport';
+import { Currency } from './types';
 
-type Row = {
-  dateISO: string;
-  description: string;
-  reference: string;
-  type: "Opening" | "Purchase" | "Payment";
-  debitBaseMinor: number;   // increases AR
-  creditBaseMinor: number;  // decreases AR
-  runningBaseMinor: number;
-
-  qty?: number;
-  unitPrice?: number;
-  currency?: string;
-  fxRate?: number;
-};
-
-function extractFxRate(fx: any): number | undefined {
-  // your fx object: { rateToBase, enteredRate, ... }
-  return fx?.enteredRate ?? fx?.rateToBase ?? undefined;
+if (!admin.apps.length) {
+  admin.initializeApp();
 }
 
-export async function exportClientStatementExcel(input: ExportClientInput): Promise<Buffer> {
-  const db = admin.firestore();
-  const range = makeDateRange(input.from, input.to);
+const db = admin.firestore();
 
-  // Client doc (if you have top-level clients collection, else skip)
-  let clientName = "Client";
-  try {
-    const clientSnap = await db.collection("clients").doc(input.clientId).get();
-    if (clientSnap.exists) clientName = clientSnap.data()?.name || clientName;
-  } catch {
-    // ignore if you don't have top-level clients
+function requireAdminOrDev(context: functions.https.CallableContext) {
+  const role = context.auth?.token?.role;
+  if (!context.auth || (role !== 'admin' && role !== 'developer')) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
   }
+}
 
-  // SALES within range: use 'date'
-  const salesSnap = await db.collection("sales")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("date", ">=", range.from)
-    .where("date", "<", range.toExclusive)
-    .orderBy("date", "asc")
-    .get();
+async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
+  const snap = await db.doc(`companies/${companyId}`).get();
+  const base = (snap.data() as any)?.baseCurrency;
+  return (base || 'USD') as Currency;
+}
 
-  // CLIENT PAYMENTS: subcollection ledger
-  const ledgerRef = db.collection("companies").doc(input.companyId)
-    .collection("clients").doc(input.clientId)
-    .collection("ledger");
+function bufferToBase64(buf: Buffer) {
+  return buf.toString('base64');
+}
 
-  const paySnap = await ledgerRef
-    .where("type", "==", "payment")
-    .where("businessDate", ">=", range.from)
-    .where("businessDate", "<", range.toExclusive)
-    .orderBy("businessDate", "asc")
-    .get();
 
-  // Opening balance = sum(sales revenueBaseMinor) - sum(payments in base minor) before range
-  const salesBefore = await db.collection("sales")
-    .where("companyId", "==", input.companyId)
-    .where("clientId", "==", input.clientId)
-    .where("date", "<", range.from)
-    .get();
+// --- helpers for deterministic error surfacing ---
+function isHttpsError(err: any): err is functions.https.HttpsError {
+  return err instanceof functions.https.HttpsError || err?.constructor?.name === 'HttpsError';
+}
 
-  const paysBefore = await ledgerRef
-    .where("type", "==", "payment")
-    .where("businessDate", "<", range.from)
-    .get();
+function looksLikeMissingIndex(err: any): boolean {
+  const msg = String(err?.message || '');
+  // Covers: "The query requires an index. You can create it here: ..."
+  return /requires an index|create.*index|create_composite/i.test(msg);
+}
 
-  const sumSalesBefore = salesBefore.docs.reduce((a, d) => a + Number(d.data().revenueBaseMinor ?? 0), 0);
-  const sumPaysBefore = paysBefore.docs.reduce((a, d) => a + Number(d.data().paymentMinor ?? 0), 0);
-  let running = sumSalesBefore - sumPaysBefore;
+const ALLOWED_CODES = new Set(['cancelled', 'unknown', 'invalid-argument', 'deadline-exceeded', 'not-found', 'already-exists', 'permission-denied', 'unauthenticated', 'resource-exhausted', 'failed-precondition', 'aborted', 'out-of-range', 'unimplemented', 'internal', 'unavailable', 'data-loss']);
 
-  const rows: Row[] = [];
-  rows.push({
-    dateISO: input.from,
-    description: "Opening Balance",
-    reference: "-",
-    type: "Opening",
-    debitBaseMinor: running > 0 ? running : 0,
-    creditBaseMinor: running < 0 ? Math.abs(running) : 0,
-    runningBaseMinor: running,
+function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
+  const c = typeof code === 'string' ? code : '';
+  return (ALLOWED_CODES.has(c) ? c : 'internal') as functions.https.FunctionsErrorCode;
+}
+
+/**
+ * Generic dispatcher for your UI convenience.
+ */
+export const exportStatement = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    try {
+      requireAdminOrDev(context);
+
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
+      
+      if (!companyId || !statementType || !dateFrom || !dateTo) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+      }
+
+      const baseCurrency = await getCompanyBaseCurrency(companyId);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      
+      let buf: Buffer;
+      let filename: string;
+
+      if (statementType === 'client') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+        const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'supplier') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'expenses') {
+        const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency });
+        filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'productMovement') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency });
+        filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'stockReport' || statementType === 'stock') {
+        if (!stockMode) throw new functions.https.HttpsError('invalid-argument', 'Missing stockMode for stock report.');
+        buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+        filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
+      }
+      
+      throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+
+    } catch (err: any) {
+      console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
+      if (isHttpsError(err)) throw err;
+      if (looksLikeMissingIndex(err)) {
+        throw new functions.https.HttpsError('failed-precondition', 'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.', { originalCode: err?.code, originalMessage: String(err?.message || '') });
+      }
+      throw new functions.https.HttpsError(normalizeHttpsCode(err?.code), String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String(err?.message || '') });
+    }
   });
-
-  // Purchases (sales)
-  for (const d of salesSnap.docs) {
-    const s = d.data();
-    const revenueBaseMinor = Number(s.revenueBaseMinor ?? 0);
-
-    running += revenueBaseMinor;
-    rows.push({
-      dateISO: s.date?.toDate().toISOString().slice(0, 10),
-      description: s.productName ? `Sale - ${s.productName}` : "Product Sale",
-      reference: s.id ?? d.id,
-      type: "Purchase",
-      debitBaseMinor: revenueBaseMinor,
-      creditBaseMinor: 0,
-      runningBaseMinor: running,
-
-      qty: Number(s.quantity ?? 0),
-      unitPrice: Number(s.salePrice ?? 0),
-      currency: s.salePriceCurrency ?? s.baseCurrency ?? "",
-      fxRate: extractFxRate(s.fx),
-    });
-  }
-
-  // Payments
-  for (const d of paySnap.docs) {
-    const p = d.data();
-    const paymentMinor = Number(p.paymentMinor ?? 0);
-
-    running -= paymentMinor;
-    rows.push({
-      dateISO: p.businessDate?.toDate().toISOString().slice(0, 10),
-      description: p.note || "Payment Received",
-      reference: d.id,
-      type: "Payment",
-      debitBaseMinor: 0,
-      creditBaseMinor: paymentMinor,
-      runningBaseMinor: running,
-
-      currency: p.currency ?? "",
-      fxRate: extractFxRate(p.fx),
-    });
-  }
-
-  // Ensure sorted by date except opening first
-  const opening = rows.shift()!;
-  rows.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
-  const ordered = [opening, ...rows];
-
-  const totalPurchases = ordered.reduce((a, r) => a + r.debitBaseMinor, 0) - opening.debitBaseMinor;
-  const totalPayments = ordered.reduce((a, r) => a + r.creditBaseMinor, 0) - opening.creditBaseMinor;
-  const closing = ordered[ordered.length - 1]?.runningBaseMinor ?? opening.runningBaseMinor;
-
-  // --- Excel ---
-  const wb = new ExcelJS.Workbook();
-  applyGlobalWorkbookStyle(wb);
-
-  const ws = wb.addWorksheet("Client Statement");
-  setSheetPrintDefaults(ws);
-
-  ws.getColumn("A").width = 2;
-  ws.getColumn("B").width = 14;
-  ws.getColumn("C").width = 34;
-  ws.getColumn("D").width = 16;
-  ws.getColumn("E").width = 10;
-  ws.getColumn("F").width = 14;
-  ws.getColumn("G").width = 14;
-  ws.getColumn("H").width = 16;
-  ws.getColumn("I").width = 8;   // qty
-  ws.getColumn("J").width = 12;  // unit price
-  ws.getColumn("K").width = 10;  // currency
-  ws.getColumn("L").width = 10;  // fx
-
-  styleTitle(ws, "FlowVia Business Solutions", "Accounts Receivable Statement");
-  styleInfoRow(ws, 5, "Client:", clientName);
-  styleInfoRow(ws, 6, "Base Currency:", input.baseCurrency);
-  styleInfoRow(ws, 7, "Period:", `From ${input.from} to ${input.to}`);
-
-  ws.getCell("B9").value = "Opening Balance:";
-  ws.getCell("C9").value = moneyFromMinor(opening.runningBaseMinor);
-
-  ws.getCell("B10").value = "Total Purchases:";
-  ws.getCell("C10").value = moneyFromMinor(totalPurchases);
-
-  ws.getCell("B11").value = "Total Payments:";
-  ws.getCell("C11").value = moneyFromMinor(totalPayments);
-
-  ws.getCell("B12").value = "Closing Balance:";
-  ws.getCell("C12").value = moneyFromMinor(closing);
-
-  ws.getCell("B13").value = "Total Transactions:";
-  ws.getCell("C13").value = ordered.length - 1;
-
-  styleSummaryBox(ws);
-
-  const headerRow = 15;
-  ws.getRow(headerRow).values = [
-    "",
-    "Date",
-    "Description",
-    "Reference",
-    "Type",
-    "Debit (Base)",
-    "Credit (Base)",
-    "Running (Base)",
-    "Qty",
-    "Unit Price",
-    "Currency",
-    "FX Rate",
-  ];
-  styleTableHeader(ws, headerRow, 2, 12);
-
-  let r = headerRow + 1;
-  for (const row of ordered) {
-    ws.getRow(r).values = [
-      "",
-      row.dateISO,
-      row.description,
-      row.reference,
-      row.type,
-      row.debitBaseMinor ? row.debitBaseMinor / 100 : "",
-      row.creditBaseMinor ? row.creditBaseMinor / 100 : "",
-      row.runningBaseMinor / 100,
-      row.qty ?? "",
-      row.unitPrice ?? "",
-      row.currency ?? "",
-      row.fxRate ?? "",
-    ];
-    styleTableBodyRow(ws, r, 2, 12);
-    ws.getRow(r).getCell(6).numFmt = "#,##0.00";
-    ws.getRow(r).getCell(7).numFmt = "#,##0.00";
-    ws.getRow(r).getCell(8).numFmt = "#,##0.00";
-    r++;
-  }
-
-  const buf = await wb.xlsx.writeBuffer();
-  return Buffer.from(buf);
-}
