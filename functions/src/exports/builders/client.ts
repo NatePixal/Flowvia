@@ -1,6 +1,7 @@
 
 // functions/src/exports/builders/client.ts
-import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
+import { db } from '../../admin';
 import { resolveFxToBase } from '../fx';
 import { minorToMajor } from '../money';
 import { StatementRow, StatementSummary, Currency } from '../types';
@@ -20,7 +21,6 @@ export async function buildClientStatement(params: {
   to: Date;
   baseCurrency: Currency;
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
-  const db = admin.firestore();
   const { companyId, clientId, from, to, baseCurrency } = params;
 
   const clientRef = db.doc(`companies/${companyId}/clients/${clientId}`);
@@ -34,8 +34,8 @@ export async function buildClientStatement(params: {
   const DATE_FIELD = 'businessDate'; // preferred
   // Fallback: if your ledger doesn't have businessDate, use 'createdAt' and accept limitations.
 
-  const fromTs = admin.firestore.Timestamp.fromDate(from);
-  const toTs = admin.firestore.Timestamp.fromDate(to);
+  const fromTs = Timestamp.fromDate(from);
+  const toTs = Timestamp.fromDate(to);
 
   // Opening: all entries before "from"
   const beforeSnap = await ledgerRef.where(DATE_FIELD, '<', fromTs).get();

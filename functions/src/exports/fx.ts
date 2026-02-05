@@ -1,6 +1,7 @@
 
 // functions/src/exports/fx.ts
-import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
+import { db } from '../admin';
 
 function toDateSafe(v: any): Date | null {
   if (!v) return null;
@@ -26,7 +27,6 @@ export async function resolveFxToBase(params: {
   | { ok: true; rateToBase: number; asOf: Date; source: 'identity' | 'stored' | 'snapshot' }
   | { ok: false; reason: 'missing_fx_snapshot' | 'missing_rate_for_currency' }
 > {
-  const db = admin.firestore();
   const { companyId, txCurrency, baseCurrency, txDate, stored } = params;
 
   if (txCurrency === baseCurrency) {
@@ -45,7 +45,7 @@ export async function resolveFxToBase(params: {
   const snap = await db
     .collection(`companies/${companyId}/fxSnapshots`)
     .where('baseCurrency', '==', baseCurrency)
-    .where('asOf', '<=', admin.firestore.Timestamp.fromDate(txDate))
+    .where('asOf', '<=', Timestamp.fromDate(txDate))
     .orderBy('asOf', 'desc')
     .limit(1)
     .get();

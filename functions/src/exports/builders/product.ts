@@ -1,6 +1,6 @@
 
 // functions/src/exports/builders/product.ts
-import * as admin from 'firebase-admin';
+import { db } from '../../admin';
 import { StatementRow, StatementSummary, Currency } from '../types';
 
 function toDate(v: any): Date | null {
@@ -18,7 +18,6 @@ export async function buildProductMovementStatement(params: {
   to: Date;
   baseCurrency: Currency; // ignored for QTY, but kept for interface consistency
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
-  const db = admin.firestore();
   const { companyId, productId, from, to } = params;
 
   // 1) Load product to get productCode

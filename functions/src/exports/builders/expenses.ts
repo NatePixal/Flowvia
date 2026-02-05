@@ -1,6 +1,7 @@
 
 // functions/src/exports/builders/expenses.ts
-import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
+import { db } from '../../admin';
 import { resolveFxToBase } from '../fx';
 import { minorToMajor } from '../money';
 import { StatementRow, StatementSummary, Currency } from '../types';
@@ -19,7 +20,6 @@ export async function buildExpensesStatement(params: {
   to: Date;
   baseCurrency: Currency;
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
-  const db = admin.firestore();
   const { companyId, from, to, baseCurrency } = params;
 
   // Adjust collection name if needed (dailyExpenses vs expenses)
@@ -28,8 +28,8 @@ export async function buildExpensesStatement(params: {
   // BUSINESS date field required:
   const DATE_FIELD = 'businessDate';
 
-  const fromTs = admin.firestore.Timestamp.fromDate(from);
-  const toTs = admin.firestore.Timestamp.fromDate(to);
+  const fromTs = Timestamp.fromDate(from);
+  const toTs = Timestamp.fromDate(to);
 
   const rangeSnap = await ref
     .where(DATE_FIELD, '>=', fromTs)

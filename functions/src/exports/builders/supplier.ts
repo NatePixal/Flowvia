@@ -1,6 +1,7 @@
 
 // functions/src/exports/builders/supplier.ts
-import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
+import { db } from '../../admin';
 import { resolveFxToBase } from '../fx';
 import { minorToMajor } from '../money';
 import { StatementRow, StatementSummary, Currency } from '../types';
@@ -20,7 +21,6 @@ export async function buildSupplierStatement(params: {
   to: Date;
   baseCurrency: Currency;
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
-  const db = admin.firestore();
   const { companyId, supplierId, from, to, baseCurrency } = params;
 
   const supplierRef = db.doc(`companies/${companyId}/suppliers/${supplierId}`);
@@ -30,8 +30,8 @@ export async function buildSupplierStatement(params: {
   const ledgerRef = db.collection(`companies/${companyId}/suppliers/${supplierId}/ledger`);
 
   const DATE_FIELD = 'businessDate'; // preferred
-  const fromTs = admin.firestore.Timestamp.fromDate(from);
-  const toTs = admin.firestore.Timestamp.fromDate(to);
+  const fromTs = Timestamp.fromDate(from);
+  const toTs = Timestamp.fromDate(to);
 
   const beforeSnap = await ledgerRef.where(DATE_FIELD, '<', fromTs).get();
 
