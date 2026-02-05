@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildStatementWorkbook = buildStatementWorkbook;
 // functions/src/exports/statement-engine.ts
-const exceljs_1 = require("exceljs");
+const ExcelJS = require("exceljs");
 const money_1 = require("./money");
 function safeNumFmt(currency) {
     // Quantity statements (no currency)
@@ -17,8 +17,8 @@ function safeNumFmt(currency) {
     }
 }
 async function buildStatementWorkbook(params) {
-    const { summary, rows, baseCurrency } = params;
-    const wb = new exceljs_1.default.Workbook();
+    const { summary, rows, baseCurrency, locale } = params;
+    const wb = new ExcelJS.Workbook();
     wb.creator = 'FlowVia';
     wb.created = new Date();
     // ===== Summary sheet =====

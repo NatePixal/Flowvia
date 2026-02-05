@@ -1,5 +1,4 @@
-
-import type { Timestamp, FieldValue } from 'firebase/firestore';
+import type { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 // Base type for currency codes
 export type Currency = 'USD' | 'AED' | 'UZS' | 'CNY';

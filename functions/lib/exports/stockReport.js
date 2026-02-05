@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportStockReportExcel = exportStockReportExcel;
 const admin = require("firebase-admin");
-const exceljs_1 = require("exceljs");
+const ExcelJS = require("exceljs");
 const exportUtils_1 = require("./exportUtils");
 function tsToISO(ts) {
     return ts.toDate().toISOString().slice(0, 10);
@@ -129,7 +129,7 @@ async function exportStockReportExcel(input) {
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([day, v]) => (Object.assign({ day }, v)));
     // --- Excel ---
-    const wb = new exceljs_1.default.Workbook();
+    const wb = new ExcelJS.Workbook();
     (0, exportUtils_1.applyGlobalWorkbookStyle)(wb);
     // ===== Sheet 1: Stock Summary
     const ws = wb.addWorksheet("Stock Summary");
