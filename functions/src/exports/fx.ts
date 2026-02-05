@@ -2,8 +2,6 @@
 // functions/src/exports/fx.ts
 import * as admin from 'firebase-admin';
 
-const db = admin.firestore();
-
 function toDateSafe(v: any): Date | null {
   if (!v) return null;
   if (v instanceof Date) return v;
@@ -28,6 +26,7 @@ export async function resolveFxToBase(params: {
   | { ok: true; rateToBase: number; asOf: Date; source: 'identity' | 'stored' | 'snapshot' }
   | { ok: false; reason: 'missing_fx_snapshot' | 'missing_rate_for_currency' }
 > {
+  const db = admin.firestore();
   const { companyId, txCurrency, baseCurrency, txDate, stored } = params;
 
   if (txCurrency === baseCurrency) {

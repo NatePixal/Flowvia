@@ -4,19 +4,36 @@ exports.exportStockReportExcel = exportStockReportExcel;
 const admin = require("firebase-admin");
 const ExcelJS = require("exceljs");
 const exportUtils_1 = require("./exportUtils");
-function tsToISO(ts) {
-    return ts.toDate().toISOString().slice(0, 10);
+function anyToMillis(v) {
+    var _a, _b;
+    if (!v)
+        return null;
+    if (typeof v === "number")
+        return v;
+    if (v instanceof Date)
+        return v.getTime();
+    if (typeof v === "string") {
+        const d = new Date(v);
+        return Number.isFinite(d.getTime()) ? d.getTime() : null;
+    }
+    if (typeof v.toMillis === "function")
+        return v.toMillis();
+    if (typeof v.toDate === "function") {
+        const d = v.toDate();
+        return (_b = (_a = d === null || d === void 0 ? void 0 : d.getTime) === null || _a === void 0 ? void 0 : _a.call(d)) !== null && _b !== void 0 ? _b : null;
+    }
+    return null;
+}
+function anyToISODate(v) {
+    if (!v)
+        return "";
+    const d = v instanceof Date ? v : typeof v.toDate === "function" ? v.toDate() : new Date(v);
+    return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : "";
 }
 async function exportStockReportExcel(input) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     const db = admin.firestore();
     const range = (0, exportUtils_1.makeDateRange)(input.from, input.to);
-    // --- IMPORTANT: we aggregate by productCode, so we need to read:
-    // incomingProducts (before, range, all)
-    // sales (before, range, all)
-    //
-    // If your dataset is huge, we can optimize later using server-side aggregates.
-    // This version is correct and stable.
     const agg = new Map();
     function get(code) {
         if (!agg.has(code)) {
@@ -35,7 +52,6 @@ async function exportStockReportExcel(input) {
         return agg.get(code);
     }
     // --- Incoming: ALL (for asOfToday)
-    // NOTE: no date filter here.
     const incAllSnap = await db.collection("incomingProducts")
         .where("companyId", "==", input.companyId)
         .get();
@@ -47,10 +63,11 @@ async function exportStockReportExcel(input) {
         const q = Number((_b = x.quantity) !== null && _b !== void 0 ? _b : 0);
         get(code).incomingAll += q;
         const dt = (_c = x.incomeDate) !== null && _c !== void 0 ? _c : x.date;
-        if (dt === null || dt === void 0 ? void 0 : dt.toMillis) {
-            if (dt.toMillis() < range.from.toMillis())
+        const ms = anyToMillis(dt);
+        if (ms != null) {
+            if (ms < range.from.getTime())
                 get(code).incomingBefore += q;
-            if (dt.toMillis() >= range.from.toMillis() && dt.toMillis() < range.toExclusive.toMillis()) {
+            if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
                 get(code).incomingRange += q;
             }
         }
@@ -59,7 +76,6 @@ async function exportStockReportExcel(input) {
     const salesAllSnap = await db.collection("sales")
         .where("companyId", "==", input.companyId)
         .get();
-    // Also build sales-by-day for the period sheet
     const salesByDay = new Map();
     for (const d of salesAllSnap.docs) {
         const s = d.data();
@@ -69,15 +85,15 @@ async function exportStockReportExcel(input) {
         const q = Number((_e = s.quantity) !== null && _e !== void 0 ? _e : 0);
         get(code).soldAll += q;
         const dt = s.date;
-        if (dt === null || dt === void 0 ? void 0 : dt.toMillis) {
-            const ms = dt.toMillis();
-            if (ms < range.from.toMillis())
+        const ms = anyToMillis(dt);
+        if (ms != null) {
+            if (ms < range.from.getTime())
                 get(code).soldBefore += q;
-            if (ms >= range.from.toMillis() && ms < range.toExclusive.toMillis()) {
+            if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
                 get(code).soldRange += q;
                 get(code).revenueRangeBaseMinor += Number((_f = s.revenueBaseMinor) !== null && _f !== void 0 ? _f : 0);
                 get(code).profitRangeBaseMinor += Number((_g = s.grossProfitBaseMinor) !== null && _g !== void 0 ? _g : 0);
-                const day = tsToISO(dt);
+                const day = anyToISODate(dt);
                 if (!salesByDay.has(day))
                     salesByDay.set(day, { units: 0, revenueMinor: 0, profitMinor: 0 });
                 const bucket = salesByDay.get(day);
@@ -87,7 +103,7 @@ async function exportStockReportExcel(input) {
             }
         }
     }
-    // Optionally enrich with product names (if you have products collection)
+    // Optional: product names
     const productNameByCode = new Map();
     try {
         const prodSnap = await db.collection("products")
@@ -102,9 +118,8 @@ async function exportStockReportExcel(input) {
         }
     }
     catch (_q) {
-        // ignore if products schema differs
+        // ignore
     }
-    // Build rows
     const rows = Array.from(agg.values()).map(a => {
         var _a;
         const opening = a.incomingBefore - a.soldBefore;
@@ -122,28 +137,25 @@ async function exportStockReportExcel(input) {
             profit: a.profitRangeBaseMinor,
         };
     });
-    // Demand sheet sorted by units sold
     const demand = [...rows].sort((a, b) => (b.sold - a.sold));
-    // Sales-by-day sorted
     const daily = Array.from(salesByDay.entries())
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([day, v]) => (Object.assign({ day }, v)));
-    // --- Excel ---
     const wb = new ExcelJS.Workbook();
     (0, exportUtils_1.applyGlobalWorkbookStyle)(wb);
     // ===== Sheet 1: Stock Summary
     const ws = wb.addWorksheet("Stock Summary");
     (0, exportUtils_1.setSheetPrintDefaults)(ws);
     ws.getColumn("A").width = 2;
-    ws.getColumn("B").width = 16; // code
-    ws.getColumn("C").width = 26; // name
-    ws.getColumn("D").width = 12; // opening
-    ws.getColumn("E").width = 12; // incoming
-    ws.getColumn("F").width = 12; // sold
-    ws.getColumn("G").width = 12; // closing
-    ws.getColumn("H").width = 14; // on hand today
-    ws.getColumn("I").width = 16; // revenue
-    ws.getColumn("J").width = 16; // profit
+    ws.getColumn("B").width = 16;
+    ws.getColumn("C").width = 26;
+    ws.getColumn("D").width = 12;
+    ws.getColumn("E").width = 12;
+    ws.getColumn("F").width = 12;
+    ws.getColumn("G").width = 12;
+    ws.getColumn("H").width = 14;
+    ws.getColumn("I").width = 16;
+    ws.getColumn("J").width = 16;
     (0, exportUtils_1.styleTitle)(ws, "FlowVia Business Solutions", "Inventory Stock Report");
     (0, exportUtils_1.styleInfoRow)(ws, 5, "Mode:", input.stockMode);
     (0, exportUtils_1.styleInfoRow)(ws, 6, "Base Currency:", input.baseCurrency);
@@ -172,7 +184,7 @@ async function exportStockReportExcel(input) {
             input.stockMode === "asOfToday" ? "" : x.incoming,
             input.stockMode === "asOfToday" ? "" : x.sold,
             input.stockMode === "asOfToday" ? "" : x.closing,
-            (input.stockMode === "range") ? "" : x.onHandToday,
+            input.stockMode === "range" ? "" : x.onHandToday,
             x.revenue / 100,
             x.profit / 100,
         ];
@@ -187,10 +199,10 @@ async function exportStockReportExcel(input) {
     ws2.getColumn("A").width = 2;
     ws2.getColumn("B").width = 16;
     ws2.getColumn("C").width = 26;
-    ws2.getColumn("D").width = 12; // units sold
-    ws2.getColumn("E").width = 16; // revenue
-    ws2.getColumn("F").width = 16; // profit
-    ws2.getColumn("G").width = 16; // avg price
+    ws2.getColumn("D").width = 12;
+    ws2.getColumn("E").width = 16;
+    ws2.getColumn("F").width = 16;
+    ws2.getColumn("G").width = 16;
     (0, exportUtils_1.styleTitle)(ws2, "FlowVia Business Solutions", "Top Demanding Products");
     (0, exportUtils_1.styleInfoRow)(ws2, 5, "Period:", `From ${input.from} to ${input.to}`);
     const hr2 = 12;

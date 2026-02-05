@@ -5,8 +5,6 @@ import { resolveFxToBase } from '../fx';
 import { minorToMajor } from '../money';
 import { StatementRow, StatementSummary, Currency } from '../types';
 
-const db = admin.firestore();
-
 function toDate(v: any): Date | null {
   if (!v) return null;
   if (v instanceof Date) return v;
@@ -21,6 +19,7 @@ export async function buildExpensesStatement(params: {
   to: Date;
   baseCurrency: Currency;
 }): Promise<{ summary: StatementSummary; rows: StatementRow[] }> {
+  const db = admin.firestore();
   const { companyId, from, to, baseCurrency } = params;
 
   // Adjust collection name if needed (dailyExpenses vs expenses)

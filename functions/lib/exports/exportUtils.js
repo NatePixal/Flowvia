@@ -14,16 +14,33 @@ function applyGlobalWorkbookStyle(wb) {
     wb.properties.date1904 = true;
 }
 function makeDateRange(from, to) {
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
-    const toExclusive = new Date(Date.UTC(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() + 1));
+    // Parse YYYY-MM-DD as UTC midnight to avoid timezone drift.
+    const parseYMD = (s) => {
+        const [y, m, d] = String(s).split('-').map((x) => Number(x));
+        if (!y || !m || !d)
+            return new Date(NaN);
+        return new Date(Date.UTC(y, m - 1, d));
+    };
+    const fromDate = parseYMD(from);
+    const toDate = parseYMD(to);
+    const toExclusive = new Date(toDate.getTime() + 24 * 60 * 60 * 1000);
     return { from: fromDate, toExclusive };
 }
 function setSheetPrintDefaults(ws) {
-    ws.pageSetup.printArea = 'A1:J50';
+    // Don't hard-code printArea (it can clip large exports when users Print/PDF).
     ws.pageSetup.fitToPage = true;
-    ws.pageSetup.fitToHeight = 0; // Set to 0 to allow multiple pages vertically
+    ws.pageSetup.fitToHeight = 0; // 0 = as many pages tall as needed
     ws.pageSetup.fitToWidth = 1;
+    ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.paperSize = 9; // A4
+    ws.pageSetup.margins = {
+        left: 0.3,
+        right: 0.3,
+        top: 0.5,
+        bottom: 0.5,
+        header: 0.3,
+        footer: 0.3,
+    };
 }
 function styleTitle(ws, title, subtitle) {
     ws.getCell('B2').value = title;
