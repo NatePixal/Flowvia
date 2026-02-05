@@ -17,7 +17,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildSupplierStatement(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { companyId, supplierId, from, to, baseCurrency } = params;
     const supplierRef = db.doc(`companies/${companyId}/suppliers/${supplierId}`);
     const supplierSnap = await supplierRef.get();
@@ -137,7 +137,7 @@ async function buildSupplierStatement(params) {
     }
     const totalDebitBase = rows.reduce((s, x) => s + (x.debitBase || 0), 0);
     const totalCreditBase = rows.reduce((s, x) => s + (x.creditBase || 0), 0);
-    const closingBase = rows.length ? rows[rows.length - 1].runningBase : openingBase;
+    const closingBase = rows.length ? ((_j = rows[rows.length - 1].runningBase) !== null && _j !== void 0 ? _j : openingBase) : openingBase;
     const summary = {
         title: 'Supplier Statement',
         companyId,

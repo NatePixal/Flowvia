@@ -1,4 +1,5 @@
 "use strict";
+// functions/src/exports/money.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.currencyDecimals = currencyDecimals;
 exports.minorToMajor = minorToMajor;

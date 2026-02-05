@@ -1,5 +1,5 @@
 // functions/src/exports/statement-engine.ts
-import ExcelJS from 'exceljs';
+import * as ExcelJS from 'exceljs';
 import { StatementRow, StatementSummary, StatementCurrency } from './types';
 import { excelNumFmtForCurrency } from './money';
 
@@ -19,8 +19,9 @@ export async function buildStatementWorkbook(params: {
   summary: StatementSummary;
   rows: StatementRow[];
   baseCurrency: StatementCurrency;
+  locale?: string;
 }): Promise<Buffer> {
-  const { summary, rows, baseCurrency } = params;
+  const { summary, rows, baseCurrency, locale } = params;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'FlowVia';

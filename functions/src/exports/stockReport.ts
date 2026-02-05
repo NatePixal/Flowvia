@@ -1,6 +1,5 @@
-
 import * as admin from "firebase-admin";
-import ExcelJS from "exceljs";
+import * as ExcelJS from "exceljs";
 import {
   applyGlobalWorkbookStyle,
   makeDateRange,

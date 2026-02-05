@@ -17,7 +17,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildClientStatement(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const { companyId, clientId, from, to, baseCurrency } = params;
     const clientRef = db.doc(`companies/${companyId}/clients/${clientId}`);
     const clientSnap = await clientRef.get();
@@ -157,7 +157,7 @@ async function buildClientStatement(params) {
     }
     const totalDebitBase = rows.reduce((s, x) => s + (x.debitBase || 0), 0);
     const totalCreditBase = rows.reduce((s, x) => s + (x.creditBase || 0), 0);
-    const closingBase = rows.length ? rows[rows.length - 1].runningBase : openingBase;
+    const closingBase = rows.length ? ((_j = rows[rows.length - 1].runningBase) !== null && _j !== void 0 ? _j : openingBase) : openingBase;
     const summary = {
         title: 'Client Statement',
         companyId,

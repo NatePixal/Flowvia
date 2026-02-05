@@ -112,4 +112,4 @@ exports.exportStatement = functions
         throw new functions.https.HttpsError(normalizeHttpsCode(err === null || err === void 0 ? void 0 : err.code), String((err === null || err === void 0 ? void 0 : err.message) || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err === null || err === void 0 ? void 0 : err.code, originalMessage: String((err === null || err === void 0 ? void 0 : err.message) || '') });
     }
 });
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=supplierStatement.js.map

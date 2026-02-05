@@ -17,7 +17,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildExpensesStatement(params) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const { companyId, from, to, baseCurrency } = params;
     // Adjust collection name if needed (dailyExpenses vs expenses)
     const ref = db.collection(`companies/${companyId}/dailyExpenses`);
@@ -94,7 +94,7 @@ async function buildExpensesStatement(params) {
     }
     const totalDebitBase = rows.reduce((s, x) => s + (x.debitBase || 0), 0);
     const totalCreditBase = rows.reduce((s, x) => s + (x.creditBase || 0), 0);
-    const closingBase = rows.length ? rows[rows.length - 1].runningBase : openingBase;
+    const closingBase = rows.length ? ((_f = rows[rows.length - 1].runningBase) !== null && _f !== void 0 ? _f : openingBase) : openingBase;
     const summary = {
         title: 'Expense Statement',
         companyId,

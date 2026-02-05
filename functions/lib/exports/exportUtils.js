@@ -50,7 +50,7 @@ function normalizeHttpsCode(code) {
  */
 exports.exportStatement = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 540, memory: '1GB' })
+    .runWith({ timeoutSeconds: 540, memory: '2GB' })
     .https.onCall(async (data, context) => {
     try {
         requireAdminOrDev(context);
@@ -67,7 +67,7 @@ exports.exportStatement = functions
             if (!targetId)
                 throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
             const { summary, rows } = await (0, client_1.buildClientStatement)({ companyId, clientId: targetId, from, to, baseCurrency });
-            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency });
+            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency, locale });
             filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
@@ -75,13 +75,13 @@ exports.exportStatement = functions
             if (!targetId)
                 throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
             const { summary, rows } = await (0, supplier_1.buildSupplierStatement)({ companyId, supplierId: targetId, from, to, baseCurrency });
-            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency });
+            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency, locale });
             filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
         if (statementType === 'expenses') {
             const { summary, rows } = await (0, expenses_1.buildExpensesStatement)({ companyId, from, to, baseCurrency });
-            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency });
+            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency, locale });
             filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
@@ -89,7 +89,7 @@ exports.exportStatement = functions
             if (!targetId)
                 throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
             const { summary, rows } = await (0, product_1.buildProductMovementStatement)({ companyId, productId: targetId, from, to, baseCurrency });
-            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency: summary.baseCurrency });
+            buf = await (0, statement_engine_1.buildStatementWorkbook)({ summary, rows, baseCurrency: summary.baseCurrency, locale });
             filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
@@ -112,4 +112,4 @@ exports.exportStatement = functions
         throw new functions.https.HttpsError(normalizeHttpsCode(err === null || err === void 0 ? void 0 : err.code), String((err === null || err === void 0 ? void 0 : err.message) || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err === null || err === void 0 ? void 0 : err.code, originalMessage: String((err === null || err === void 0 ? void 0 : err.message) || '') });
     }
 });
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=exportUtils.js.map

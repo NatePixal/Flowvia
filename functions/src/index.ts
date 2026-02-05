@@ -2,109 +2,122 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 
-import { exportClientStatementExcel } from './exports/clientStatement';
-import { exportSupplierStatementExcel } from './exports/supplierStatement';
-import { exportExpenseStatementExcel } from './exports/expenseStatement';
-import { exportProductMovementExcel } from './exports/productMovement';
-import { exportStockReportExcel } from "./exports/stockReport";
+import { buildStatementWorkbook } from './exports/statement-engine';
+import { buildClientStatement } from './exports/builders/client';
+import { buildSupplierStatement } from './exports/builders/supplier';
+import { buildExpensesStatement } from './exports/builders/expenses';
+import { buildProductMovementStatement } from './exports/builders/product';
+import { exportStockReportExcel } from './exports/stockReport';
+import { Currency } from './exports/types';
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-admin.firestore().settings({ ignoreUndefinedProperties: true });
+const db = admin.firestore();
+
+function requireAdminOrDev(context: functions.https.CallableContext) {
+  const role = context.auth?.token?.role;
+  if (!context.auth || (role !== 'admin' && role !== 'developer')) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
+  }
+}
+
+async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
+  const snap = await db.doc(`companies/${companyId}`).get();
+  const base = (snap.data() as any)?.baseCurrency;
+  return (base || 'USD') as Currency;
+}
 
 function bufferToBase64(buf: Buffer) {
   return buf.toString('base64');
 }
 
+function isHttpsError(err: any): err is functions.https.HttpsError {
+  return err instanceof functions.https.HttpsError || err?.constructor?.name === 'HttpsError';
+}
+
+function looksLikeMissingIndex(err: any): boolean {
+  const msg = String(err?.message || '');
+  return /requires an index|create.*index|create_composite/i.test(msg);
+}
+
+const ALLOWED_CODES = new Set(['cancelled', 'unknown', 'invalid-argument', 'deadline-exceeded', 'not-found', 'already-exists', 'permission-denied', 'unauthenticated', 'resource-exhausted', 'failed-precondition', 'aborted', 'out-of-range', 'unimplemented', 'internal', 'unavailable', 'data-loss']);
+
+function normalizeHttpsCode(code: any): functions.https.FunctionsErrorCode {
+  const c = typeof code === 'string' ? code : '';
+  return (ALLOWED_CODES.has(c) ? c : 'internal') as functions.https.FunctionsErrorCode;
+}
+
+/**
+ * Generic dispatcher for your UI convenience.
+ */
 export const exportStatement = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 540, memory: '2GB' }) // Increased memory for safety
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .https.onCall(async (data, context) => {
-    // Auth check
-    if (!context.auth || (context.auth.token.role !== 'admin' && context.auth.token.role !== 'developer')) {
-        throw new functions.https.HttpsError('permission-denied', 'You must be an admin or developer to export data.');
-    }
-
-    const d = data;
-
-    // Payload validation
-    if (!d?.companyId || !d?.statementType || !d?.dateFrom || !d?.dateTo) {
-        throw new functions.https.HttpsError("invalid-argument", "Missing required fields: companyId, statementType, dateFrom, dateTo.");
-    }
-
-    const companyId = String(d.companyId);
-    const dateFrom = String(d.dateFrom);
-    const dateTo = String(d.dateTo);
-    const statementType = String(d.statementType);
-
-    let buf: Buffer;
-    let filename = `statement_${statementType}_${dateFrom}_${dateTo}.xlsx`;
-
     try {
-        if (statementType === "client") {
-            if (!d.clientId || !d.baseCurrency) throw new functions.https.HttpsError("invalid-argument", "Missing clientId/baseCurrency for client statement.");
-            buf = await exportClientStatementExcel({
-                companyId,
-                clientId: String(d.clientId),
-                baseCurrency: String(d.baseCurrency),
-                from: dateFrom,
-                to: dateTo,
-            });
-            filename = `client_${d.clientId}_${dateFrom}_${dateTo}.xlsx`;
-        } else if (statementType === "supplier") {
-            if (!d.supplierId || !d.supplierName || !d.baseCurrency) {
-                throw new functions.https.HttpsError("invalid-argument", "Missing supplierId/supplierName/baseCurrency for supplier statement.");
-            }
-            buf = await exportSupplierStatementExcel({
-                companyId,
-                supplierId: String(d.supplierId),
-                supplierName: String(d.supplierName),
-                baseCurrency: String(d.baseCurrency),
-                from: dateFrom,
-                to: dateTo,
-            });
-            filename = `supplier_${d.supplierId}_${dateFrom}_${dateTo}.xlsx`;
-        } else if (statementType === "expenses") {
-            if (!d.baseCurrency) throw new functions.https.HttpsError("invalid-argument", "Missing baseCurrency for expense statement.");
-            buf = await exportExpenseStatementExcel({
-                companyId,
-                baseCurrency: String(d.baseCurrency),
-                from: dateFrom,
-                to: dateTo,
-            });
-            filename = `expenses_${dateFrom}_${dateTo}.xlsx`;
-        } else if (statementType === "product") {
-            if (!d.productCode) throw new functions.https.HttpsError("invalid-argument", "Missing productCode for product statement.");
-            buf = await exportProductMovementExcel({
-                companyId,
-                productCode: String(d.productCode),
-                from: dateFrom,
-                to: dateTo,
-            });
-            filename = `product_${d.productCode}_${dateFrom}_${dateTo}.xlsx`;
-        } else if (statementType === "stock") {
-            if (!d.baseCurrency || !d.stockMode) throw new functions.https.HttpsError("invalid-argument", "Missing baseCurrency/stockMode for stock report.");
-            buf = await exportStockReportExcel({
-                companyId,
-                baseCurrency: String(d.baseCurrency),
-                stockMode: d.stockMode,
-                from: dateFrom,
-                to: dateTo,
-            });
-            filename = `stock_${d.stockMode}_${dateFrom}_${dateTo}.xlsx`;
-        } else {
-            throw new functions.https.HttpsError("invalid-argument", `Unknown statementType: ${statementType}`);
-        }
-    } catch (e: any) {
-        console.error("Export generation failed:", e);
-        throw e instanceof functions.https.HttpsError ? e : new functions.https.HttpsError("internal", e?.message || "Failed to generate the export file.");
+      requireAdminOrDev(context);
+
+      const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
+      
+      if (!companyId || !statementType || !dateFrom || !dateTo) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+      }
+
+      const baseCurrency = await getCompanyBaseCurrency(companyId);
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      
+      let buf: Buffer;
+      let filename: string;
+
+      if (statementType === 'client') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+        const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'supplier') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+        const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'expenses') {
+        const { summary, rows } = await buildExpensesStatement({ companyId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
+        filename = `expense_statement_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'productMovement') {
+        if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+        const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
+        buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
+        filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
+      }
+
+      if (statementType === 'stockReport' || statementType === 'stock') {
+        if (!stockMode) throw new functions.https.HttpsError('invalid-argument', 'Missing stockMode for stock report.');
+        buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+        filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
+        return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
+      }
+      
+      throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+
+    } catch (err: any) {
+      console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
+      if (isHttpsError(err)) throw err;
+      if (looksLikeMissingIndex(err)) {
+        throw new functions.https.HttpsError('failed-precondition', 'Firestore requires a composite index for this export (or the index is still building). Deploy firestore indexes, then retry.', { originalCode: err?.code, originalMessage: String(err?.message || '') });
+      }
+      throw new functions.https.HttpsError(normalizeHttpsCode(err?.code), String(err?.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String(err?.message || '') });
     }
-    
-    return {
-        filename,
-        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        base64: bufferToBase64(buf),
-    };
-});
+  });
