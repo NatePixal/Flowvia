@@ -1,258 +1,293 @@
 
 import * as admin from "firebase-admin";
 import * as ExcelJS from "exceljs";
+import {
+  applyGlobalWorkbookStyle,
+  makeDateRange,
+  setSheetPrintDefaults,
+  styleTitle,
+  styleInfoRow,
+  styleTableHeader,
+  styleTableBodyRow,
+} from "./exportUtils";
 
-type StockRow = {
-  "Product Name": string;
-  "Current Stock Level": number;
-  "Last Arrival Date": string | null; // YYYY-MM-DD
-  "Arrival Quantity": number | null;
-  "Unit Purchase Price": number | null;
-  "Exchange Rate": number | null;
-  "Total Value": number | null;
+type StockMode = "range" | "asOfToday" | "both";
+
+type ExportStockInput = {
+  companyId: string;
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+  baseCurrency: string;
+  stockMode: StockMode;
 };
 
-type SupplierRow = {
-  "Date of Transfer": string; // YYYY-MM-DD
-  "Supplier Name": string;
-  "Product Purchased": string;
-  "Quantity Bought": number;
-  "Purchase Price (Original Currency)": number;
-  "Daily Exchange Rate": number;
-  "Total Paid (Local Currency)": number;
+type Agg = {
+  productCode: string;
+  incomingBefore: number;
+  incomingRange: number;
+  incomingAll: number;
+
+  soldBefore: number;
+  soldRange: number;
+  soldAll: number;
+
+  revenueRangeBaseMinor: number;
+  profitRangeBaseMinor: number;
 };
 
-type ClientRow = {
-  "Client Name": string;
-  "Purchase Date": string; // YYYY-MM-DD
-  "Product Name": string;
-  "Quantity Purchased": number;
-  "Unit Sale Price": number;
-  "Exchange Rate (Day of Purchase)": number;
-  "Total Amount Due": number;
-  "Payment Status": "Paid" | "Loan";
-};
-
-const MIME_XLSX =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-
-function toISODate(value: any): string | null {
-  if (!value) return null;
-  // Firestore Timestamp support (admin.firestore.Timestamp)
-  if (typeof value.toDate === "function") {
-    const d = value.toDate();
-    return d.toISOString().slice(0, 10);
+function anyToMillis(v: any): number | null {
+  if (!v) return null;
+  if (typeof v === "number") return v;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "string") {
+    const d = new Date(v);
+    return Number.isFinite(d.getTime()) ? d.getTime() : null;
   }
-  // JS Date
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  // string already
-  if (typeof value === "string") return value.slice(0, 10);
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v.toDate === "function") {
+    const d: Date = v.toDate();
+    return d?.getTime?.() ?? null;
+  }
   return null;
 }
 
-function applySheetBranding(
-  ws: ExcelJS.Worksheet,
-  companyName: string,
-  reportTitle: string,
-  columnCount: number
-) {
-  // A1..G1 merged
-  ws.mergeCells(1, 1, 1, columnCount);
-  ws.getCell(1, 1).value = companyName;
-  ws.getCell(1, 1).font = { bold: true, size: 14 };
-  ws.getCell(1, 1).alignment = { horizontal: "center", vertical: "middle" };
-
-  ws.mergeCells(2, 1, 2, columnCount);
-  ws.getCell(2, 1).value = reportTitle;
-  ws.getCell(2, 1).font = { bold: true, size: 12 };
-  ws.getCell(2, 1).alignment = { horizontal: "center", vertical: "middle" };
-
-  ws.getRow(1).height = 22;
-  ws.getRow(2).height = 18;
+function anyToISODate(v: any): string {
+  if (!v) return "";
+  const d: Date = v instanceof Date ? v : typeof v.toDate === "function" ? v.toDate() : new Date(v);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : "";
 }
 
-function styleHeaderRow(row: ExcelJS.Row) {
-  row.font = { bold: true, color: { argb: "FFFFFFFF" } };
-  row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-  row.height = 18;
+export async function exportStockReportExcel(input: ExportStockInput): Promise<Buffer> {
+  const db = admin.firestore();
+  const range = makeDateRange(input.from, input.to);
 
-  row.eachCell((cell) => {
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "1F4E79" }, // deep blue
-    };
-    cell.border = {
-      top: { style: "thin", color: { argb: "D0D0D0" } },
-      left: { style: "thin", color: { argb: "D0D0D0" } },
-      bottom: { style: "thin", color: { argb: "D0D0D0" } },
-      right: { style: "thin", color: { argb: "D0D0D0" } },
-    };
-  });
-}
+  const agg = new Map<string, Agg>();
 
-function zebraAndBorders(ws: ExcelJS.Worksheet, startRow: number) {
-  const last = ws.rowCount;
-
-  for (let r = startRow; r <= last; r++) {
-    const row = ws.getRow(r);
-
-    if ((r - startRow) % 2 === 1) {
-      row.eachCell((cell) => {
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "F5F7FA" }, // light gray
-        };
+  function get(code: string): Agg {
+    if (!agg.has(code)) {
+      agg.set(code, {
+        productCode: code,
+        incomingBefore: 0,
+        incomingRange: 0,
+        incomingAll: 0,
+        soldBefore: 0,
+        soldRange: 0,
+        soldAll: 0,
+        revenueRangeBaseMinor: 0,
+        profitRangeBaseMinor: 0,
       });
     }
-
-    row.eachCell((cell) => {
-      cell.border = {
-        top: { style: "thin", color: { argb: "D0D0D0" } },
-        left: { style: "thin", color: { argb: "D0D0D0" } },
-        bottom: { style: "thin", color: { argb: "D0D0D0" } },
-        right: { style: "thin", color: { argb: "D0D0D0" } },
-      };
-      cell.alignment = { vertical: "middle" };
-    });
+    return agg.get(code)!;
   }
-}
 
-function autoFit(ws: ExcelJS.Worksheet) {
-  ws.columns.forEach((col) => {
-    if (col) {
-      let max = 10;
-      col.eachCell({ includeEmpty: true }, (cell) => {
-        const v = cell.value as any;
-        const text =
-          v == null
-            ? ""
-            : typeof v === "object" && "richText" in v
-            ? JSON.stringify(v)
-            : String(v);
-        max = Math.max(max, text.length);
-      });
-      col.width = Math.min(45, max + 2);
+  // --- Incoming: ALL (for asOfToday)
+  const incAllSnap = await db.collection("companies").doc(input.companyId).collection("incomingProducts")
+    .get();
+
+  for (const d of incAllSnap.docs) {
+    const x = d.data();
+    const code = String(x.productCode ?? "");
+    if (!code) continue;
+
+    const q = Number(x.quantity ?? 0);
+    get(code).incomingAll += q;
+
+    const dt = x.incomeDate ?? x.date;
+    const ms = anyToMillis(dt);
+    if (ms != null) {
+      if (ms < range.from.getTime()) get(code).incomingBefore += q;
+      if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
+        get(code).incomingRange += q;
+      }
     }
+  }
+
+  // --- Sales: ALL (for asOfToday)
+  const salesAllSnap = await db.collection("companies").doc(input.companyId).collection("sales")
+    .get();
+
+  const salesByDay = new Map<string, { units: number; revenueMinor: number; profitMinor: number }>();
+
+  for (const d of salesAllSnap.docs) {
+    const s = d.data();
+    const code = String(s.productCode ?? "");
+    if (!code) continue;
+
+    const q = Number(s.quantity ?? 0);
+    get(code).soldAll += q;
+
+    const dt = s.date;
+    const ms = anyToMillis(dt);
+    if (ms != null) {
+      if (ms < range.from.getTime()) get(code).soldBefore += q;
+
+      if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
+        get(code).soldRange += q;
+        get(code).revenueRangeBaseMinor += Number(s.revenueBaseMinor ?? 0);
+        get(code).profitRangeBaseMinor += Number(s.grossProfitBaseMinor ?? 0);
+
+        const day = anyToISODate(dt);
+        if (!salesByDay.has(day)) salesByDay.set(day, { units: 0, revenueMinor: 0, profitMinor: 0 });
+        const bucket = salesByDay.get(day)!;
+        bucket.units += q;
+        bucket.revenueMinor += Number(s.revenueBaseMinor ?? 0);
+        bucket.profitMinor += Number(s.grossProfitBaseMinor ?? 0);
+      }
+    }
+  }
+
+  // Optional: product names
+  const productNameByCode = new Map<string, string>();
+  try {
+    const prodSnap = await db.collection("companies").doc(input.companyId).collection("products")
+      .get();
+    for (const d of prodSnap.docs) {
+      const p = d.data();
+      const code = String(p.productCode ?? p.code ?? p.sku ?? "");
+      if (!code) continue;
+      productNameByCode.set(code, p.productName ?? p.name ?? "");
+    }
+  } catch {
+    // ignore
+  }
+
+  const rows = Array.from(agg.values()).map(a => {
+    const opening = a.incomingBefore - a.soldBefore;
+    const closing = opening + a.incomingRange - a.soldRange;
+    const onHandToday = a.incomingAll - a.soldAll;
+    return {
+      code: a.productCode,
+      name: productNameByCode.get(a.productCode) ?? "",
+      opening,
+      incoming: a.incomingRange,
+      sold: a.soldRange,
+      closing,
+      onHandToday,
+      revenue: a.revenueRangeBaseMinor,
+      profit: a.profitRangeBaseMinor,
+    };
   });
-}
 
-function setColumnFormats(ws: ExcelJS.Worksheet, headers: string[]) {
-  const headerIndex: Record<string, number> = {};
-  headers.forEach((h, i) => (headerIndex[h] = i + 1));
+  const demand = [...rows].sort((a, b) => (b.sold - a.sold));
 
-  const dateCols = headers
-    .map((h, i) => ({ h, i: i + 1 }))
-    .filter(({ h }) => h.toLowerCase().includes("date"))
-    .map((x) => x.i);
-
-  const moneyCols = headers
-    .map((h, i) => ({ h, i: i + 1 }))
-    .filter(({ h }) => {
-      const s = h.toLowerCase();
-      return (
-        s.includes("price") ||
-        s.includes("rate") ||
-        s.includes("value") ||
-        s.includes("total") ||
-        s.includes("amount") ||
-        s.includes("paid")
-      );
-    })
-    .map((x) => x.i);
-
-  // Apply numFmt for all rows (data rows)
-  for (let r = 4; r <= ws.rowCount; r++) {
-    dateCols.forEach((c) => {
-      const cell = ws.getCell(r, c);
-      if (cell.value) cell.numFmt = "yyyy-mm-dd";
-    });
-    moneyCols.forEach((c) => {
-      const cell = ws.getCell(r, c);
-      if (typeof cell.value === "number") cell.numFmt = "#,##0.00";
-    });
-  }
-}
-
-function addTable(
-  ws: ExcelJS.Worksheet,
-  headers: string[],
-  rows: any[],
-  startRow: number
-) {
-  // write header row
-  const headerRow = ws.getRow(startRow);
-  headerRow.values = ["", ...headers];
-  styleHeaderRow(headerRow);
-
-  // write data
-  for (let i = 0; i < rows.length; i++) {
-    const row = ws.getRow(startRow + 1 + i);
-    const obj = rows[i];
-    row.values = ["", ...headers.map((h) => obj[h] ?? null)];
-  }
-
-  zebraAndBorders(ws, startRow + 1);
-  setColumnFormats(ws, headers);
-  autoFit(ws);
-}
-
-export async function buildStockReportXlsx(params: {
-  companyName: string;
-  stockRows: StockRow[];
-  supplierRows: SupplierRow[];
-  clientRows: ClientRow[];
-}) {
-  const { companyName, stockRows, supplierRows, clientRows } = params;
+  const daily = Array.from(salesByDay.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, v]) => ({ day, ...v }));
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "FlowVia";
-  wb.created = new Date();
+  applyGlobalWorkbookStyle(wb);
 
-  // --- Sheet 1
-  const ws1 = wb.addWorksheet("Stock & Incoming");
-  const headers1 = [
+  // ===== Sheet 1: Stock Summary
+  const ws = wb.addWorksheet("Stock Summary");
+  setSheetPrintDefaults(ws);
+
+  ws.getColumn("A").width = 2;
+  ws.getColumn("B").width = 16;
+  ws.getColumn("C").width = 26;
+  ws.getColumn("D").width = 12;
+  ws.getColumn("E").width = 12;
+  ws.getColumn("F").width = 12;
+  ws.getColumn("G").width = 12;
+  ws.getColumn("H").width = 14;
+  ws.getColumn("I").width = 16;
+  ws.getColumn("J").width = 16;
+
+  styleTitle(ws, "FlowVia Business Solutions", "Inventory Stock Report");
+  styleInfoRow(ws, 5, "Mode:", input.stockMode);
+  styleInfoRow(ws, 6, "Base Currency:", input.baseCurrency);
+  styleInfoRow(ws, 7, "Period:", `From ${input.from} to ${input.to}`);
+
+  const headerRow = 12;
+  ws.getRow(headerRow).values = [
+    "",
+    "Product Code",
     "Product Name",
-    "Current Stock Level",
-    "Last Arrival Date",
-    "Arrival Quantity",
-    "Unit Purchase Price",
-    "Exchange Rate",
-    "Total Value",
+    "Opening Qty",
+    "Incoming Qty",
+    "Sold Qty",
+    "Closing Qty",
+    "On Hand Today",
+    "Revenue (Base)",
+    "Gross Profit (Base)",
   ];
-  applySheetBranding(ws1, companyName, "Stock Availability & Incoming Products", headers1.length);
-  addTable(ws1, headers1, stockRows, 4);
+  styleTableHeader(ws, headerRow, 2, 10);
 
-  // --- Sheet 2
-  const ws2 = wb.addWorksheet("Suppliers");
-  const headers2 = [
-    "Date of Transfer",
-    "Supplier Name",
-    "Product Purchased",
-    "Quantity Bought",
-    "Purchase Price (Original Currency)",
-    "Daily Exchange Rate",
-    "Total Paid (Local Currency)",
-  ];
-  applySheetBranding(ws2, companyName, "Supplier Transactions", headers2.length);
-  addTable(ws2, headers2, supplierRows, 4);
+  let r = headerRow + 1;
+  for (const x of rows) {
+    ws.getRow(r).values = [
+      "",
+      x.code,
+      x.name,
+      input.stockMode === "asOfToday" ? "" : x.opening,
+      input.stockMode === "asOfToday" ? "" : x.incoming,
+      input.stockMode === "asOfToday" ? "" : x.sold,
+      input.stockMode === "asOfToday" ? "" : x.closing,
+      input.stockMode === "range" ? "" : x.onHandToday,
+      x.revenue / 100,
+      x.profit / 100,
+    ];
+    styleTableBodyRow(ws, r, 2, 10);
+    ws.getRow(r).getCell(9).numFmt = "#,##0.00";
+    ws.getRow(r).getCell(10).numFmt = "#,##0.00";
+    r++;
+  }
 
-  // --- Sheet 3
-  const ws3 = wb.addWorksheet("Clients");
-  const headers3 = [
-    "Client Name",
-    "Purchase Date",
-    "Product Name",
-    "Quantity Purchased",
-    "Unit Sale Price",
-    "Exchange Rate (Day of Purchase)",
-    "Total Amount Due",
-    "Payment Status",
-  ];
-  applySheetBranding(ws3, companyName, "Client Loans & Sales", headers3.length);
-  addTable(ws3, headers3, clientRows, 4);
+  // ===== Sheet 2: Demand
+  const ws2 = wb.addWorksheet("Demand");
+  setSheetPrintDefaults(ws2);
 
-  const buffer = await wb.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  ws2.getColumn("A").width = 2;
+  ws2.getColumn("B").width = 16;
+  ws2.getColumn("C").width = 26;
+  ws2.getColumn("D").width = 12;
+  ws2.getColumn("E").width = 16;
+  ws2.getColumn("F").width = 16;
+  ws2.getColumn("G").width = 16;
+
+  styleTitle(ws2, "FlowVia Business Solutions", "Top Demanding Products");
+  styleInfoRow(ws2, 5, "Period:", `From ${input.from} to ${input.to}`);
+
+  const hr2 = 12;
+  ws2.getRow(hr2).values = ["", "Product Code", "Product Name", "Units Sold", "Revenue (Base)", "Gross Profit (Base)", "Avg Sell Price"];
+  styleTableHeader(ws2, hr2, 2, 7);
+
+  let rr = hr2 + 1;
+  for (const x of demand) {
+    const avg = x.sold > 0 ? (x.revenue / 100) / x.sold : 0;
+    ws2.getRow(rr).values = ["", x.code, x.name, x.sold, x.revenue / 100, x.profit / 100, avg];
+    styleTableBodyRow(ws2, rr, 2, 7);
+    ws2.getRow(rr).getCell(5).numFmt = "#,##0.00";
+    ws2.getRow(rr).getCell(6).numFmt = "#,##0.00";
+    ws2.getRow(rr).getCell(7).numFmt = "#,##0.00";
+    rr++;
+  }
+
+  // ===== Sheet 3: Sales by Day
+  const ws3 = wb.addWorksheet("Sales by Day");
+  setSheetPrintDefaults(ws3);
+
+  ws3.getColumn("A").width = 2;
+  ws3.getColumn("B").width = 14;
+  ws3.getColumn("C").width = 12;
+  ws3.getColumn("D").width = 16;
+  ws3.getColumn("E").width = 16;
+
+  styleTitle(ws3, "FlowVia Business Solutions", "Sales Performance by Day");
+  styleInfoRow(ws3, 5, "Period:", `From ${input.from} to ${input.to}`);
+
+  const hr3 = 12;
+  ws3.getRow(hr3).values = ["", "Date", "Units Sold", "Revenue (Base)", "Gross Profit (Base)"];
+  styleTableHeader(ws3, hr3, 2, 5);
+
+  let r3 = hr3 + 1;
+  for (const d of daily) {
+    ws3.getRow(r3).values = ["", d.day, d.units, d.revenueMinor / 100, d.profitMinor / 100];
+    styleTableBodyRow(ws3, r3, 2, 5);
+    ws3.getRow(r3).getCell(4).numFmt = "#,##0.00";
+    ws3.getRow(r3).getCell(5).numFmt = "#,##0.00";
+    r3++;
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  return Buffer.from(buf);
 }

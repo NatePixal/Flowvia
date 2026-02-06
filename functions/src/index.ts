@@ -1,9 +1,13 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
+import * as ExcelJS from "exceljs";
 
 // Initialize app
-admin.initializeApp();
+if (!admin.apps.length) {
+    admin.initializeApp();
+}
+
 
 // Import builders
 import { buildStatementWorkbook } from './exports/statement-engine';
@@ -11,7 +15,7 @@ import { buildClientStatement } from './exports/builders/client';
 import { buildSupplierStatement } from './exports/builders/supplier';
 import { buildExpensesStatement } from './exports/builders/expenses';
 import { buildProductMovementStatement } from './exports/builders/product';
-import { buildStockReportXlsx } from './exports/stockReport';
+import { exportStockReportExcel } from './exports/stockReport';
 import { Currency } from './exports/types';
 
 const db = admin.firestore();
@@ -81,61 +85,10 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
 
-        if (statementType === "stockReport") {
-            // NOTE: This uses placeholder data as requested in the prompt.
-            // Replace with real database queries.
-            const stockRows = [
-              {
-                "Product Name": "Sample Product",
-                "Current Stock Level": 10,
-                "Last Arrival Date": "2026-02-01",
-                "Arrival Quantity": 20,
-                "Unit Purchase Price": 2.5,
-                "Exchange Rate": 1,
-                "Total Value": 50,
-              },
-            ];
-        
-            const supplierRows = [
-              {
-                "Date of Transfer": "2026-02-01",
-                "Supplier Name": "Supplier A",
-                "Product Purchased": "Sample Product",
-                "Quantity Bought": 20,
-                "Purchase Price (Original Currency)": 2.5,
-                "Daily Exchange Rate": 1,
-                "Total Paid (Local Currency)": 50,
-              },
-            ];
-        
-            const clientRows = [
-              {
-                "Client Name": "Client X",
-                "Purchase Date": "2026-02-02",
-                "Product Name": "Sample Product",
-                "Quantity Purchased": 5,
-                "Unit Sale Price": 3,
-                "Exchange Rate (Day of Purchase)": 1,
-                "Total Amount Due": 15,
-                "Payment Status": "Loan" as const,
-              },
-            ];
-
-            const companySnap = await db.doc(`companies/${companyId}`).get();
-            const companyName = (companySnap.data() as any)?.name || 'FlowVia Business Solutions';
-        
-            const xlsxBuffer = await buildStockReportXlsx({
-              companyName: companyName,
-              stockRows,
-              supplierRows,
-              clientRows,
-            });
-        
-            return {
-              base64: xlsxBuffer.toString("base64"),
-              filename: `stock-report-${companyId}-${dateFrom}-${dateTo}.xlsx`,
-              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            };
+        if (statementType === "stockReport" || statementType === "stock") {
+            const buffer = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+            filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
+            return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
         }
         
         throw new HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
@@ -143,6 +96,6 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
     } catch (err: any) {
         console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
         if (err instanceof HttpsError) throw err;
-        throw new HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String(err?.message || '') });
+        throw new HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
     }
 });

@@ -19,7 +19,7 @@ export function makeDateRange(from: string, to: string) {
   const toDate = parseYMD(to);
   const toExclusive = new Date(toDate.getTime() + 24 * 60 * 60 * 1000);
 
-  return { from: fromDate, toExclusive };
+  return { from: fromDate, to: toDate, toExclusive };
 }
 
 export function setSheetPrintDefaults(ws: Worksheet) {
