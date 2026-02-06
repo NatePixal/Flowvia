@@ -1,7 +1,6 @@
 
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
-import * as ExcelJS from "exceljs";
 
 // Initialize app
 if (!admin.apps.length) {
@@ -86,7 +85,7 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
         }
 
         if (statementType === "stockReport" || statementType === "stock") {
-            const buffer = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
+            buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
             filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
         }
