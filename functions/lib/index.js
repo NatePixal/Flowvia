@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.exportStatement = void 0;
+exports.ensureExpenseBusinessDate = exports.ensureLedgerBusinessDate = exports.exportStatement = void 0;
 const functions = require("firebase-functions/v1");
 const https_1 = require("firebase-functions/v1/https");
 const admin_1 = require("./admin");
@@ -10,6 +10,7 @@ const supplier_1 = require("./exports/builders/supplier");
 const expenses_1 = require("./exports/builders/expenses");
 const product_1 = require("./exports/builders/product");
 const stockReport_1 = require("./exports/stockReport");
+const firestore_1 = require("firebase-admin/firestore");
 function requireAdminOrDev(auth) {
     var _a;
     const role = (_a = auth === null || auth === void 0 ? void 0 : auth.token) === null || _a === void 0 ? void 0 : _a.role;
@@ -96,5 +97,55 @@ exports.exportStatement = functions
             throw err;
         throw new https_1.HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err === null || err === void 0 ? void 0 : err.code, originalMessage: String((err === null || err === void 0 ? void 0 : err.message) || '') });
     }
+});
+// --- Business Date Triggers ---
+function toBusinessDayFromCreatedAt(ts, tz = 'Asia/Tashkent') {
+    const d = ts.toDate();
+    const parts = new Intl.DateTimeFormat('en', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year').value;
+    const m = parts.find(p => p.type === 'month').value;
+    const day = parts.find(p => p.type === 'day').value;
+    return `${y}-${m}-${day}`; // YYYY-MM-DD
+}
+function businessDayToBusinessDate(businessDay) {
+    return firestore_1.Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+}
+exports.ensureLedgerBusinessDate = functions
+    .region('us-central1')
+    .firestore.document('companies/{companyId}/clients/{clientId}/ledger/{entryId}')
+    .onCreate(async (snap) => {
+    var _a;
+    const data = snap.data() || {};
+    if (data.businessDate)
+        return null;
+    const createdAt = data.createdAt;
+    const businessDay = (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+    return snap.ref.update({
+        businessDay,
+        businessDate: businessDayToBusinessDate(businessDay),
+        createdAt: (_a = data.createdAt) !== null && _a !== void 0 ? _a : firestore_1.FieldValue.serverTimestamp(),
+    });
+});
+exports.ensureExpenseBusinessDate = functions
+    .region('us-central1')
+    .firestore.document('companies/{companyId}/dailyExpenses/{expenseId}')
+    .onCreate(async (snap) => {
+    var _a;
+    const data = snap.data() || {};
+    if (data.businessDate)
+        return null;
+    const createdAt = data.createdAt;
+    const businessDay = (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+    return snap.ref.update({
+        businessDay,
+        businessDate: businessDayToBusinessDate(businessDay),
+        createdAt: (_a = data.createdAt) !== null && _a !== void 0 ? _a : firestore_1.FieldValue.serverTimestamp(),
+    });
 });
 //# sourceMappingURL=index.js.map

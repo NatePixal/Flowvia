@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useTranslation } from 'react-i18next';
@@ -6,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button';
 import { useFirebase } from '@/firebase';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Code, Users, Loader2 } from 'lucide-react';
+import { Code, Users, Loader2, DatabaseZap } from 'lucide-react';
 import { hasPermission } from '@/lib/permissions';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useState } from 'react';
@@ -19,6 +20,9 @@ export default function DataMigrationPage() {
 
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcResult, setRecalcResult] = useState<any>(null);
+  
+  const [isBackfillingDates, setIsBackfillingDates] = useState(false);
+  const [backfillDatesResult, setBackfillDatesResult] = useState<any>(null);
 
   if (!hasPermission(userProfile, 'developer', 'view')) {
     return (
@@ -59,6 +63,35 @@ export default function DataMigrationPage() {
     }
   }
 
+  const handleBackfillDates = async (dryRun: boolean) => {
+    if (!companyId) {
+      toast({ variant: 'destructive', title: t('toast.error.title'), description: t('toast.error.companyIdMissingError') });
+      return;
+    }
+    
+    setIsBackfillingDates(true);
+    setBackfillDatesResult(null);
+    toast({ title: t('admin.backfillStarted') as string, description: `${t('admin.mode')}: ${dryRun ? t('admin.dryRun') : 'LIVE'}` });
+
+    try {
+      const functions = getFunctions(firebaseApp, 'us-central1');
+      const backfillFn = httpsCallable(functions, 'backfillBusinessDates');
+      const res: any = await backfillFn({ companyId, dryRun });
+      setBackfillDatesResult(res.data);
+      toast({
+        title: t('admin.backfillComplete') as string,
+        description: t('admin.processedHistoricalData') as string,
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast({ variant: 'destructive', title: t('toast.error.title'), description: err.message });
+      setBackfillDatesResult({ success: false, logs: [err.message] });
+    } finally {
+      setIsBackfillingDates(false);
+    }
+  }
+
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-bold">{t('nav.dataMigration')}</h1>
@@ -97,6 +130,36 @@ export default function DataMigrationPage() {
                     <h4 className="font-semibold">{t('admin.results')}</h4>
                     <pre className="mt-2 whitespace-pre-wrap text-xs font-mono max-h-60 overflow-auto">
                         {`Success: ${recalcResult.success}\nDry Run: ${recalcResult.dryRun}\nProcessed: ${recalcResult.clientsProcessed}\nTo Update: ${recalcResult.clientsForUpdate}\n\nLogs:\n${(recalcResult.logs || []).join('\n')}`}
+                    </pre>
+                </div>
+              )}
+          </div>
+
+          <div className="space-y-4 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                 <div className="flex-shrink-0 rounded-full bg-primary/10 p-2 text-primary"><DatabaseZap className="h-5 w-5" /></div>
+                 <div>
+                    <h3 className="font-semibold">{t('admin.backfillBusinessDates')}</h3>
+                    <p className="text-sm text-muted-foreground">{t('admin.backfillBusinessDatesDescription')}</p>
+                 </div>
+              </div>
+              
+              <div className="flex gap-4">
+                <Button variant="outline" onClick={() => handleBackfillDates(true)} disabled={isBackfillingDates}>
+                  {isBackfillingDates && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('admin.runDryRun')}
+                </Button>
+                 <Button variant="destructive" onClick={() => handleBackfillDates(false)} disabled={isBackfillingDates}>
+                  {isBackfillingDates && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('admin.runMigration')}
+                 </Button>
+              </div>
+              
+              {backfillDatesResult && (
+                <div className="mt-4 rounded-md bg-secondary p-4 text-secondary-foreground">
+                    <h4 className="font-semibold">{t('admin.results')}</h4>
+                    <pre className="mt-2 whitespace-pre-wrap text-xs font-mono max-h-60 overflow-auto">
+                        {JSON.stringify(backfillDatesResult, null, 2)}
                     </pre>
                 </div>
               )}

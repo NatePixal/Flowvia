@@ -195,3 +195,109 @@ export const normalizeIncomingDates = functions.region('us-central1').runWith({ 
         nextStartAfterDocId: snapshot.docs.length < pageSize ? null : lastDocId
     };
 });
+
+export const backfillBusinessDates = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    // Auth check
+    if (context.auth?.token?.role !== 'developer') {
+      throw new functions.https.HttpsError('permission-denied', 'Developer access required.');
+    }
+    const { companyId, dryRun = true } = data;
+    if (!companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    }
+
+    const logs: string[] = [];
+    const counts = {
+      expenses: { processed: 0, updated: 0 },
+      sales: { processed: 0, updated: 0 },
+      clientLedgers: { processed: 0, updated: 0 },
+      supplierLedgers: { processed: 0, updated: 0 },
+      incomingProducts: { processed: 0, updated: 0 },
+    };
+
+    const firestore = admin.firestore();
+    const batchSize = 400;
+
+    // Helper to process a collection
+    async function processCollection(collectionPath: string, dateFields: string[], category: keyof typeof counts) {
+      const collectionRef = firestore.collection(`companies/${companyId}/${collectionPath}`);
+      const snapshot = await collectionRef.get();
+      
+      let writeCount = 0;
+      let batch = firestore.batch();
+
+      for (const doc of snapshot.docs) {
+        counts[category].processed++;
+        const docData = doc.data();
+
+        if (docData.businessDate) continue;
+
+        let sourceDate: Date | null = null;
+        for (const field of dateFields) {
+            if (docData[field]) {
+                const d = docData[field];
+                if (d instanceof admin.firestore.Timestamp) {
+                    sourceDate = d.toDate();
+                    break;
+                }
+                if (d instanceof Date) {
+                    sourceDate = d;
+                    break;
+                }
+                if (typeof d === 'string' || typeof d === 'number') {
+                    const parsed = new Date(d);
+                    if (!isNaN(parsed.getTime())) {
+                        sourceDate = parsed;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (sourceDate) {
+            const y = sourceDate.getUTCFullYear();
+            const m = String(sourceDate.getUTCMonth() + 1).padStart(2, '0');
+            const d = String(sourceDate.getUTCDate()).padStart(2, '0');
+            const businessDay = `${y}-${m}-${d}`;
+            const businessDate = admin.firestore.Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+
+            counts[category].updated++;
+            if (!dryRun) {
+                batch.update(doc.ref, { businessDay, businessDate });
+                writeCount++;
+                if (writeCount >= batchSize) {
+                    await batch.commit();
+                    batch = firestore.batch();
+                    writeCount = 0;
+                }
+            }
+        }
+      }
+      if (!dryRun && writeCount > 0) {
+        await batch.commit();
+      }
+      logs.push(`${collectionPath}: Processed ${counts[category].processed}, Updated ${counts[category].updated}`);
+    }
+    
+    // Process subcollections
+    async function processSubCollections(parentCollection: string, subCollection: string, dateFields: string[], category: keyof typeof counts) {
+      const parentDocs = await firestore.collection(`companies/${companyId}/${parentCollection}`).get();
+      for (const parentDoc of parentDocs.docs) {
+        await processCollection(`${parentCollection}/${parentDoc.id}/${subCollection}`, dateFields, category);
+      }
+    }
+
+
+    await processCollection('dailyExpenses', ['date', 'createdAt'], 'expenses');
+    await processCollection('sales', ['date', 'createdAt'], 'sales');
+    await processCollection('incomingProducts', ['incomeDate', 'date', 'createdAt'], 'incomingProducts');
+
+    await processSubCollections('clients', 'ledger', ['purchaseDate', 'createdAt'], 'clientLedgers');
+    await processSubCollections('suppliers', 'ledger', ['createdAt'], 'supplierLedgers');
+    
+    return { success: true, dryRun, logs, counts };
+  });
+
