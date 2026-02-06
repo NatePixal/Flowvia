@@ -16,6 +16,7 @@ import {
 import { clampNonNegative, toMinor } from './money';
 import { ClientLedgerEntry, Supplier, SupplierLedgerEntry, Client, Currency } from './types';
 import { withCompanyId } from './firestore-path';
+import { format } from 'date-fns';
 
 export async function recomputeClientOutstanding(db: any, companyId: string, clientId: string) {
   const clientRef = doc(db, 'companies', companyId, 'clients', clientId);
@@ -140,6 +141,10 @@ export async function recordClientPaymentFIFO(
 
       remainingPayment -= amountToApply;
     }
+    
+    const today = new Date();
+    const businessDay = format(today, 'yyyy-MM-dd');
+    const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
 
     const paymentEntry: Omit<ClientLedgerEntry, 'id'> = withCompanyId(companyId, {
       clientId,
@@ -151,6 +156,8 @@ export async function recordClientPaymentFIFO(
       paymentMinor: paymentMinor,
       note: note || 'Client Payment',
       createdAt: serverTimestamp(),
+      businessDay,
+      businessDate,
     });
     tx.set(doc(ledgerRef), paymentEntry);
 
@@ -212,6 +219,10 @@ export async function recordSupplierPaymentFIFO(
 
       remainingPayment -= amountToApply;
     }
+    
+    const today = new Date();
+    const businessDay = format(today, 'yyyy-MM-dd');
+    const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
 
     const paymentEntry: Omit<SupplierLedgerEntry, 'id'> = withCompanyId(companyId, {
       supplierId,
@@ -220,6 +231,8 @@ export async function recordSupplierPaymentFIFO(
       paymentMinor,
       note: note || 'Payment to supplier',
       createdAt: serverTimestamp(),
+      businessDay,
+      businessDate,
     });
 
     transaction.set(doc(ledgerRef), paymentEntry);
@@ -241,6 +254,8 @@ export async function addClientLegacyDebtToLedger(
   if (!amountMajor || amountMajor <= 0) return;
 
   const amountMinor = toMinor(amountMajor, currency);
+  const businessDay = format(date, 'yyyy-MM-dd');
+  const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
 
   const ledgerRef = collection(db, 'companies', companyId, 'clients', clientId, 'ledger');
 
@@ -254,6 +269,8 @@ export async function addClientLegacyDebtToLedger(
     note: note?.trim() || 'Legacy debt',
     createdAt: Timestamp.fromDate(date ?? new Date()),
     legacy: true,
+    businessDay,
+    businessDate,
   });
 
   await addDoc(ledgerRef, entry);

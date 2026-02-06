@@ -1,3 +1,4 @@
+
 import type { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 // Base type for currency codes
@@ -132,6 +133,10 @@ export type Sale = {
   costOfGoodsSoldBaseMinor?: number; // COGS in MINOR units of baseCurrency
   grossProfitBaseMinor?: number; // Gross profit in MINOR units of baseCurrency
 
+  // Date fields
+  businessDay?: string; // YYYY-MM-DD
+  businessDate?: FirestoreTs;
+
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
   date?: FirestoreTs | Date | string;
@@ -183,8 +188,11 @@ export type ClientLedgerEntry = {
   relatedSaleId?: string;
   note?: string;
   legacy?: boolean;
-  businessDate?: FirestoreTs;
   
+  // Date fields
+  businessDay?: string; // YYYY-MM-DD
+  businessDate?: FirestoreTs;
+
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
   purchaseDate?: Timestamp | Date | string;
@@ -228,7 +236,11 @@ export type SupplierLedgerEntry = {
 
   note?: string;
   createdAt: FirestoreTs;               // Firestore Timestamp
+  
+  // Date fields
+  businessDay?: string; // YYYY-MM-DD
   businessDate?: FirestoreTs;
+
   relatedIncomingLogId?: string; // Link to the incoming stock log
 };
 
@@ -273,6 +285,10 @@ export type IncomingProductLog = {
   category?: string;
   location?: string;
   minStock?: number;
+
+  // Date fields
+  businessDay?: string; // YYYY-MM-DD
+  businessDate?: FirestoreTs;
 
   // Backward-compat aliases (your UI/exporters still reference these)
   date?: Timestamp | Date | string;
@@ -333,6 +349,10 @@ export type DailyExpense = {
   fx?: FxSnapshot;
   amountMinor?: number; // Total expense in MINOR units of `currency`
   amountBaseMinor?: number; // Total expense in MINOR units of `baseCurrency`
+  
+  // Date fields
+  businessDay?: string; // YYYY-MM-DD
+  businessDate?: FirestoreTs;
 };
 
 export type Invite = {
@@ -360,3 +380,4 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
+

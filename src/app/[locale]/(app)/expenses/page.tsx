@@ -106,6 +106,9 @@ export default function ExpensesPage() {
         
         const expensesCollectionRef = companyCollection(firestore, companyId, 'dailyExpenses');
         
+        const businessDay = format(date, 'yyyy-MM-dd');
+        const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+
         const payload: Omit<DailyExpense, 'id'> = {
           ...withCompanyId(companyId, {}),
           expenseType,
@@ -113,7 +116,8 @@ export default function ExpensesPage() {
           amount,
           currency,
           date: Timestamp.fromDate(date),
-          businessDate: Timestamp.fromDate(date),
+          businessDay,
+          businessDate,
           paid_to_seller_id: paid_to_seller_id || '',
           employee_id: employee_id || '',
           paid_to_seller_name: paid_to_seller_id ? recipientName : '',
@@ -149,9 +153,13 @@ export default function ExpensesPage() {
       const expenseRef = companyDoc(firestore, companyId, `dailyExpenses/${expenseId}`);
       
       const payload: Partial<DailyExpense> = { ...expenseData };
-      if (payload.date) {
-        payload.businessDate = payload.date;
+      if (payload.date && (payload.date instanceof Date || payload.date instanceof Timestamp)) {
+        const d = payload.date instanceof Date ? payload.date : payload.date.toDate();
+        const businessDay = format(d, 'yyyy-MM-dd');
+        payload.businessDay = businessDay;
+        payload.businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
       }
+
       if (expenseData.amount && expenseData.currency) {
         payload.amountMinor = toMinor(expenseData.amount, expenseData.currency);
         if (expenseData.currency === companyBaseCurrency) {

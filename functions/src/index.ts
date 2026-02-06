@@ -2,6 +2,7 @@
 import * as functions from 'firebase-functions/v1';
 import { HttpsError } from 'firebase-functions/v1/https';
 import { db } from './admin';
+import * as admin from 'firebase-admin';
 import { buildStatementWorkbook } from './exports/statement-engine';
 import { buildClientStatement } from './exports/builders/client';
 import { buildSupplierStatement } from './exports/builders/supplier';
@@ -9,6 +10,7 @@ import { buildExpensesStatement } from './exports/builders/expenses';
 import { buildProductMovementStatement } from './exports/builders/product';
 import { exportStockReportExcel } from './exports/stockReport';
 import { Currency, Company } from './types';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
   const role = auth?.token?.role;
@@ -103,3 +105,61 @@ export const exportStatement = functions
         throw new HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
     }
 });
+
+
+// --- Business Date Triggers ---
+
+function toBusinessDayFromCreatedAt(ts: admin.firestore.Timestamp, tz = 'Asia/Tashkent') {
+  const d = ts.toDate();
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(d);
+  const y = parts.find(p => p.type === 'year')!.value;
+  const m = parts.find(p => p.type === 'month')!.value;
+  const day = parts.find(p => p.type === 'day')!.value;
+  return `${y}-${m}-${day}`; // YYYY-MM-DD
+}
+
+function businessDayToBusinessDate(businessDay: string) {
+  return Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+}
+
+export const ensureLedgerBusinessDate = functions
+  .region('us-central1')
+  .firestore.document('companies/{companyId}/clients/{clientId}/ledger/{entryId}')
+  .onCreate(async (snap) => {
+    const data = snap.data() || {};
+    if (data.businessDate) return null;
+
+    const createdAt: admin.firestore.Timestamp | undefined = data.createdAt;
+    const businessDay: string =
+      (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+
+    return snap.ref.update({
+      businessDay,
+      businessDate: businessDayToBusinessDate(businessDay),
+      createdAt: data.createdAt ?? FieldValue.serverTimestamp(),
+    });
+  });
+
+export const ensureExpenseBusinessDate = functions
+  .region('us-central1')
+  .firestore.document('companies/{companyId}/dailyExpenses/{expenseId}')
+  .onCreate(async (snap) => {
+    const data = snap.data() || {};
+    if (data.businessDate) return null;
+
+    const createdAt: admin.firestore.Timestamp | undefined = data.createdAt;
+    const businessDay: string =
+      (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+
+    return snap.ref.update({
+      businessDay,
+      businessDate: businessDayToBusinessDate(businessDay),
+      createdAt: data.createdAt ?? FieldValue.serverTimestamp(),
+    });
+  });

@@ -29,7 +29,7 @@ function bufferToBase64(buf) {
 // v1 onCall function
 exports.exportStatement = functions
     .region('us-central1')
-    .runWith({ timeoutSeconds: 540, memory: '1GiB' })
+    .runWith({ timeoutSeconds: 540, memory: '1GB' })
     .https.onCall(async (data, context) => {
     try {
         requireAdminOrDev(context.auth);

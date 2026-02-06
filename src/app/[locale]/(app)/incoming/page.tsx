@@ -20,6 +20,7 @@ import {
   deleteField,
   orderBy,
 } from 'firebase/firestore';
+import { format } from 'date-fns';
 
 import type {
   Company,
@@ -35,7 +36,6 @@ import AddIncomingProductDialog from '@/components/incoming/add-incoming-product
 import EditIncomingLogDialog from '@/components/incoming/edit-incoming-log-dialog';
 import DeleteIncomingLogDialog from '@/components/incoming/delete-incoming-log-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
 import { useCompanyCollection } from '@/hooks/use-company-collection';
 import { importIncomingProducts } from '@/lib/csv-import';
 import { Input } from '@/components/ui/input';
@@ -238,6 +238,8 @@ export default function IncomingPage() {
   
         // ✅ Write incoming log (NEVER write undefined)
         const newLogRef = doc(incomingLogCollectionRef);
+        const businessDay = format(incoming.incomeDate, 'yyyy-MM-dd');
+        const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
   
         const logData: any = withCompanyId(companyId, {
           productCode: incoming.productCode,
@@ -256,6 +258,8 @@ export default function IncomingPage() {
           totalCostBaseMinor,
   
           incomeDate: Timestamp.fromDate(incoming.incomeDate),
+          businessDay,
+          businessDate,
           date: Timestamp.fromDate(incoming.incomeDate), // FIX: Use user date for legacy field
           recordedAt: serverTimestamp(),
         });
@@ -286,7 +290,8 @@ export default function IncomingPage() {
             note: `Purchase of ${incomingQty} x ${incoming.productCode}`,
             relatedIncomingLogId: newLogRef.id,
             createdAt: serverTimestamp(),
-            businessDate: Timestamp.fromDate(incoming.incomeDate),
+            businessDay,
+            businessDate,
           };
   
           transaction.set(doc(supplierLedgerRef), withCompanyId(companyId, ledgerEntry));
@@ -486,6 +491,9 @@ export default function IncomingPage() {
   
         transaction.update(productRef, productUpdate);
   
+        const businessDay = format(newData.incomeDate, 'yyyy-MM-dd');
+        const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+
         // ✅ 2) Update Log (NEVER write undefined)
         const logUpdate: any = {
           quantity: newQty,
@@ -501,6 +509,8 @@ export default function IncomingPage() {
           totalCostBaseMinor: newTotalBaseMinor,
 
           incomeDate: Timestamp.fromDate(newData.incomeDate),
+          businessDay,
+          businessDate,
           date: Timestamp.fromDate(newData.incomeDate), // FIX: Update legacy date field as well
           editedAt: serverTimestamp(),
           editedBy: user?.uid,
@@ -551,6 +561,7 @@ export default function IncomingPage() {
               note: `Purchase of ${newQty} x ${oldLog.productCode}`,
               relatedIncomingLogId: logId,
               createdAt: serverTimestamp(),
+              businessDay,
               businessDate: Timestamp.fromDate(newData.incomeDate),
             };
   
@@ -589,6 +600,7 @@ export default function IncomingPage() {
                 note: `Purchase of ${newQty} x ${oldLog.productCode}`,
                 relatedIncomingLogId: logId,
                 createdAt: serverTimestamp(),
+                businessDay,
                 businessDate: Timestamp.fromDate(newData.incomeDate),
               };
   
@@ -699,7 +711,7 @@ export default function IncomingPage() {
         const newTotalBaseMinor = subtractMinor(currentTotalBaseMinor, logTotalBaseMinor);
 
         const newAvgCostMinor = newQty > 0 ? Math.round(newTotalMinor / newQty) : 0;
-        const newAvgCostBaseMinor = newQty > 0 ? Math.round(newProductTotalBaseMinor / newQty) : 0;
+        const newAvgCostBaseMinor = newQty > 0 ? Math.round(newTotalBaseMinor / newQty) : 0;
 
         transaction.update(productRef, {
           quantity: newQty,

@@ -196,6 +196,8 @@ export default function SalesPage() {
             });
 
             const paymentTypeCanonical = normalizePaymentType(paymentType);
+            const businessDay = format(date, 'yyyy-MM-dd');
+            const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
 
             const salePayload: Omit<Sale, 'id'> = {
                 ...withCompanyId(companyId, {}),
@@ -210,6 +212,8 @@ export default function SalesPage() {
                 isDeleted: false,
                 revenueMinor, costOfGoodsSoldMinor, grossProfitMinor,
                 revenueBaseMinor, costOfGoodsSoldBaseMinor, grossProfitBaseMinor,
+                businessDay,
+                businessDate,
                 ...(fx ? {fx} : {})
             };
             const newSaleDocRef = doc(saleCollectionRef);
@@ -226,6 +230,7 @@ export default function SalesPage() {
               withCompanyId(companyId, {
                 clientId, type: 'purchase', currency: salePriceCurrency, totalMinor: revenueMinor,
                 paidMinor: paidAtSaleMinor, dueMinor, relatedSaleId: newSaleDocRef.id, createdAt: serverTimestamp(),
+                businessDay, businessDate,
                 note: `Sale of ${quantity} x ${productData.name} (${paymentTypeCanonical})`,
                 items: [{ productId, name: productData.name, qty: quantity, unitPriceMinor: toMinor(salePrice, salePriceCurrency), lineTotalMinor: revenueMinor }],
               })
@@ -250,7 +255,7 @@ export default function SalesPage() {
         return;
     }
 
-    const { quantity, salePrice, salePriceCurrency, fx, ...rest } = updatedData;
+    const { quantity, salePrice, salePriceCurrency, fx, date, ...rest } = updatedData;
     const saleRef = companyDoc(firestore, companyId, `sales/${saleId}`);
 
     try {
@@ -294,9 +299,15 @@ export default function SalesPage() {
         if (newStock < 0) throw new Error("Not enough stock for this edit.");
         transaction.update(productRef, { quantity: newStock, lowStock: newStock <= (productData.minStock || 0) });
         
+        const businessDay = format(date, 'yyyy-MM-dd');
+        const businessDate = Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+
         // Update sale
         transaction.update(saleRef, {
             ...rest,
+            date: Timestamp.fromDate(date),
+            businessDay,
+            businessDate,
             quantity, salePrice, salePriceCurrency,
             fx: fx || deleteField(),
             revenueMinor, revenueBaseMinor, costOfGoodsSoldBaseMinor, grossProfitBaseMinor, grossProfitMinor,
