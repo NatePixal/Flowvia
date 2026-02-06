@@ -1,12 +1,11 @@
 
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import * as functions from 'firebase-functions';
 import * as admin from "firebase-admin";
 
 // Initialize app
 if (!admin.apps.length) {
     admin.initializeApp();
 }
-
 
 // Import builders
 import { buildStatementWorkbook } from './exports/statement-engine';
@@ -19,10 +18,10 @@ import { Currency } from './exports/types';
 
 const db = admin.firestore();
 
-function requireAdminOrDev(auth: any) { // req.auth is different in v2
+function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
   const role = auth?.token?.role;
   if (!auth || (role !== 'admin' && role !== 'developer')) {
-    throw new HttpsError('permission-denied', 'Admin/Developer required.');
+    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
   }
 }
 
@@ -36,14 +35,17 @@ function bufferToBase64(buf: Buffer) {
   return buf.toString('base64');
 }
 
-// v2 onCall function
-export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
+// v1 onCall function
+export const exportStatement = functions
+    .region('us-central1')
+    .runWith({ timeoutSeconds: 540, memory: '1GiB' })
+    .https.onCall(async (data, context) => {
     try {
-        requireAdminOrDev(req.auth);
+        requireAdminOrDev(context.auth);
 
-        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = req.data || {};
+        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
         if (!companyId || !statementType || !dateFrom || !dateTo) {
-            throw new HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+            throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
         }
 
         const baseCurrency = await getCompanyBaseCurrency(companyId);
@@ -54,7 +56,7 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
         let filename: string;
 
         if (statementType === 'client') {
-            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for client statement.');
+            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
             const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
             filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
@@ -62,7 +64,7 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
         }
 
         if (statementType === 'supplier') {
-            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
             const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
             filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
@@ -77,24 +79,34 @@ export const exportStatement = onCall({ region: 'us-central1', timeoutSeconds: 5
         }
 
         if (statementType === 'productMovement') {
-            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for product statement.');
+            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
             const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
             filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
 
-        if (statementType === "stockReport" || statementType === "stock") {
-            buf = await exportStockReportExcel({ companyId, from: dateFrom, to: dateTo, baseCurrency, stockMode });
-            filename = `stock_report_${stockMode}_${dateFrom}_${dateTo}.xlsx`;
-            return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf) };
+        if (statementType === "stockReport") {
+            const xlsxBuffer = await exportStockReportExcel({
+                companyId,
+                from: dateFrom,
+                to: dateTo,
+                baseCurrency,
+                stockMode
+            });
+            
+            return {
+                base64: xlsxBuffer.toString("base64"),
+                filename: `stock-report-${companyId}-${dateFrom}-${dateTo}.xlsx`,
+                mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            };
         }
         
-        throw new HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+        throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
 
     } catch (err: any) {
         console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
-        if (err instanceof HttpsError) throw err;
-        throw new HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
+        if (err instanceof functions.https.HttpsError) throw err;
+        throw new functions.https.HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
     }
 });
