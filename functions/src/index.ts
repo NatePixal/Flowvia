@@ -1,13 +1,6 @@
 
-import * as functions from 'firebase-functions';
-import * as admin from "firebase-admin";
-
-// Initialize app
-if (!admin.apps.length) {
-    admin.initializeApp();
-}
-
-// Import builders
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { db } from './admin'; // Use the safe admin init
 import { buildStatementWorkbook } from './exports/statement-engine';
 import { buildClientStatement } from './exports/builders/client';
 import { buildSupplierStatement } from './exports/builders/supplier';
@@ -16,12 +9,10 @@ import { buildProductMovementStatement } from './exports/builders/product';
 import { exportStockReportExcel } from './exports/stockReport';
 import { Currency } from './exports/types';
 
-const db = admin.firestore();
-
-function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
+function requireAdminOrDev(auth: any) {
   const role = auth?.token?.role;
   if (!auth || (role !== 'admin' && role !== 'developer')) {
-    throw new functions.https.HttpsError('permission-denied', 'Admin/Developer required.');
+    throw new HttpsError('permission-denied', 'Admin/Developer required.');
   }
 }
 
@@ -35,17 +26,14 @@ function bufferToBase64(buf: Buffer) {
   return buf.toString('base64');
 }
 
-// v1 onCall function
-export const exportStatement = functions
-    .region('us-central1')
-    .runWith({ timeoutSeconds: 540, memory: '1GiB' })
-    .https.onCall(async (data, context) => {
+// v2 onCall function, renamed to avoid deployment conflict
+export const exportStatementV2 = onCall({ region: 'us-central1', timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
     try {
-        requireAdminOrDev(context.auth);
+        requireAdminOrDev(req.auth);
 
-        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
+        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = req.data || {};
         if (!companyId || !statementType || !dateFrom || !dateTo) {
-            throw new functions.https.HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
+            throw new HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
         }
 
         const baseCurrency = await getCompanyBaseCurrency(companyId);
@@ -56,7 +44,7 @@ export const exportStatement = functions
         let filename: string;
 
         if (statementType === 'client') {
-            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for client statement.');
+            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for client statement.');
             const { summary, rows } = await buildClientStatement({ companyId, clientId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
             filename = `client_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
@@ -64,7 +52,7 @@ export const exportStatement = functions
         }
 
         if (statementType === 'supplier') {
-            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
+            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for supplier statement.');
             const { summary, rows } = await buildSupplierStatement({ companyId, supplierId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency, locale });
             filename = `supplier_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
@@ -79,7 +67,7 @@ export const exportStatement = functions
         }
 
         if (statementType === 'productMovement') {
-            if (!targetId) throw new functions.https.HttpsError('invalid-argument', 'Missing targetId for product statement.');
+            if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for product statement.');
             const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
             buf = await buildStatementWorkbook({ summary, rows, baseCurrency: summary.baseCurrency, locale });
             filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
@@ -87,6 +75,7 @@ export const exportStatement = functions
         }
 
         if (statementType === "stockReport") {
+            if (!stockMode) throw new HttpsError('invalid-argument', 'Missing stockMode for stock report.');
             const xlsxBuffer = await exportStockReportExcel({
                 companyId,
                 from: dateFrom,
@@ -97,16 +86,16 @@ export const exportStatement = functions
             
             return {
                 base64: xlsxBuffer.toString("base64"),
-                filename: `stock-report-${companyId}-${dateFrom}-${dateTo}.xlsx`,
+                filename: `stock-report-${stockMode}-${companyId}-${dateFrom}-${dateTo}.xlsx`,
                 mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             };
         }
         
-        throw new functions.https.HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
+        throw new HttpsError('invalid-argument', `Unsupported statementType: ${statementType}`);
 
     } catch (err: any) {
         console.error('exportStatement failed:', { code: err?.code, message: err?.message, stack: err?.stack });
-        if (err instanceof functions.https.HttpsError) throw err;
-        throw new functions.https.HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
+        if (err instanceof HttpsError) throw err;
+        throw new HttpsError('internal', String(err.message || 'Export failed (internal). Check Cloud Functions logs.'), { originalCode: err?.code, originalMessage: String((err?.message) || '') });
     }
 });
