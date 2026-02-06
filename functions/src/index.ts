@@ -1,15 +1,16 @@
 
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { db } from './admin'; // Use the safe admin init
+import * as functions from 'firebase-functions/v1';
+import { HttpsError } from 'firebase-functions/v1/https';
+import { db } from './admin';
 import { buildStatementWorkbook } from './exports/statement-engine';
 import { buildClientStatement } from './exports/builders/client';
 import { buildSupplierStatement } from './exports/builders/supplier';
 import { buildExpensesStatement } from './exports/builders/expenses';
 import { buildProductMovementStatement } from './exports/builders/product';
 import { exportStockReportExcel } from './exports/stockReport';
-import { Currency } from './exports/types';
+import { Currency, Company } from './types';
 
-function requireAdminOrDev(auth: any) {
+function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
   const role = auth?.token?.role;
   if (!auth || (role !== 'admin' && role !== 'developer')) {
     throw new HttpsError('permission-denied', 'Admin/Developer required.');
@@ -18,7 +19,7 @@ function requireAdminOrDev(auth: any) {
 
 async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
   const snap = await db.doc(`companies/${companyId}`).get();
-  const base = (snap.data() as any)?.baseCurrency;
+  const base = (snap.data() as Company)?.baseCurrency;
   return (base || 'USD') as Currency;
 }
 
@@ -26,12 +27,15 @@ function bufferToBase64(buf: Buffer) {
   return buf.toString('base64');
 }
 
-// v2 onCall function, renamed to avoid deployment conflict
-export const exportStatementV2 = onCall({ region: 'us-central1', timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
+// v1 onCall function
+export const exportStatement = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GiB' })
+  .https.onCall(async (data, context) => {
     try {
-        requireAdminOrDev(req.auth);
+        requireAdminOrDev(context.auth);
 
-        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = req.data || {};
+        const { companyId, statementType, targetId, dateFrom, dateTo, locale, stockMode } = data || {};
         if (!companyId || !statementType || !dateFrom || !dateTo) {
             throw new HttpsError('invalid-argument', 'Missing companyId/statementType/dateFrom/dateTo.');
         }

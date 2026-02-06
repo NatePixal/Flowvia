@@ -87,7 +87,7 @@ export default function DataToolsPage() {
       payload.locale = i18n.language;
 
       // 2. Call the function
-      const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatementV2");
+      const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatement");
       const res: any = await fn(payload);
       
       // 3. Handle response and download
