@@ -2,12 +2,69 @@
 
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const firestore = admin.firestore();
+
+function toBusinessDayFromCreatedAt(ts: admin.firestore.Timestamp, tz = 'Asia/Tashkent') {
+  const d = ts.toDate();
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(d);
+  const y = parts.find(p => p.type === 'year')!.value;
+  const m = parts.find(p => p.type === 'month')!.value;
+  const day = parts.find(p => p.type === 'day')!.value;
+  return `${y}-${m}-${day}`; // YYYY-MM-DD
+}
+
+function businessDayToBusinessDate(businessDay: string) {
+  return Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+}
+
+// Firestore Triggers for automatically adding businessDate on new documents
+export const ensureLedgerBusinessDate = functions
+  .region('us-central1')
+  .firestore.document('companies/{companyId}/clients/{clientId}/ledger/{entryId}')
+  .onCreate(async (snap) => {
+    const data = snap.data() || {};
+    if (data.businessDate) return null;
+
+    const createdAt: admin.firestore.Timestamp | undefined = data.createdAt;
+    const businessDay: string =
+      (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+
+    return snap.ref.update({
+      businessDay,
+      businessDate: businessDayToBusinessDate(businessDay),
+      createdAt: data.createdAt ?? FieldValue.serverTimestamp(),
+    });
+  });
+
+export const ensureExpenseBusinessDate = functions
+  .region('us-central1')
+  .firestore.document('companies/{companyId}/dailyExpenses/{expenseId}')
+  .onCreate(async (snap) => {
+    const data = snap.data() || {};
+    if (data.businessDate) return null;
+
+    const createdAt: admin.firestore.Timestamp | undefined = data.createdAt;
+    const businessDay: string =
+      (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+
+    return snap.ref.update({
+      businessDay,
+      businessDate: businessDayToBusinessDate(businessDay),
+      createdAt: data.createdAt ?? FieldValue.serverTimestamp(),
+    });
+  });
 
 
 export const auditIncomingDateTypes = functions.region('us-central1').https.onCall(async (data, context) => {
