@@ -19,6 +19,7 @@ import { add } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Code } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
 type StockMode = "range" | "asOfToday" | "both";
