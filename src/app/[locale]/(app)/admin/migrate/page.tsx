@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useTranslation } from 'react-i18next';
@@ -15,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function DataMigrationPage() {
   const { t } = useTranslation();
-  const { userProfile, companyId, firebaseApp } = useFirebase();
+  const { userProfile, firebaseApp } = useFirebase();
   const { toast } = useToast();
 
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -37,7 +35,9 @@ export default function DataMigrationPage() {
   }
   
   const handleRecalculateBalances = async (dryRun: boolean) => {
-    if (!companyId) {
+    // This logic would also need to be updated for developers if used app-wide.
+    // For now, we focus on the business date backfill.
+    if (!userProfile?.companyId) {
       toast({ variant: 'destructive', title: t('toast.error.title'), description: t('toast.error.companyIdMissingError') });
       return;
     }
@@ -48,7 +48,7 @@ export default function DataMigrationPage() {
     try {
       const functions = getFunctions(firebaseApp, 'us-central1');
       const recalculateFn = httpsCallable(functions, 'recalculateAllClientBalances');
-      const res: any = await recalculateFn({ companyId, dryRun });
+      const res: any = await recalculateFn({ companyId: userProfile.companyId, dryRun });
       setRecalcResult(res.data);
       toast({
         title: t('toast.success.recalculationComplete'),
@@ -64,11 +64,6 @@ export default function DataMigrationPage() {
   }
 
   const handleBackfillDates = async (dryRun: boolean) => {
-    if (!companyId) {
-      toast({ variant: 'destructive', title: t('toast.error.title'), description: t('toast.error.companyIdMissingError') });
-      return;
-    }
-    
     setIsBackfillingDates(true);
     setBackfillDatesResult(null);
     toast({ title: t('admin.backfillStarted') as string, description: `${t('admin.mode')}: ${dryRun ? t('admin.dryRun') : 'LIVE'}` });
@@ -76,11 +71,12 @@ export default function DataMigrationPage() {
     try {
       const functions = getFunctions(firebaseApp, 'us-central1');
       const backfillFn = httpsCallable(functions, 'backfillBusinessDates');
-      const res: any = await backfillFn({ companyId, dryRun });
+      // No longer needs companyId, it will run for all companies.
+      const res: any = await backfillFn({ dryRun });
       setBackfillDatesResult(res.data);
       toast({
         title: t('admin.backfillComplete') as string,
-        description: t('admin.processedHistoricalData') as string,
+        description: `Processed ${res.data.companiesProcessed} companies.`,
       });
     } catch (err: any) {
       console.error(err);
@@ -140,7 +136,7 @@ export default function DataMigrationPage() {
                  <div className="flex-shrink-0 rounded-full bg-primary/10 p-2 text-primary"><DatabaseZap className="h-5 w-5" /></div>
                  <div>
                     <h3 className="font-semibold">{t('admin.backfillBusinessDates')}</h3>
-                    <p className="text-sm text-muted-foreground">{t('admin.backfillBusinessDatesDescription')}</p>
+                    <p className="text-sm text-muted-foreground">{t('admin.backfillBusinessDatesDescriptionAppWide')}</p>
                  </div>
               </div>
               
