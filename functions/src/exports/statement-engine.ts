@@ -147,6 +147,8 @@ export async function buildStatementWorkbook(params: {
   shSummary.mergeCells('A1:B1');
   shSummary.getCell('A1').value = summary.title;
   shSummary.getCell('A1').font = { size: 16, bold: true };
+  
+  shSummary.getCell('A2').value = 'Export version: 2026-02-07-v3';
 
   shSummary.getCell('A3').value = 'Entity';
   shSummary.getCell('B3').value = summary.entityLabel;
