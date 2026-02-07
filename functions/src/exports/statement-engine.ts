@@ -1,43 +1,150 @@
 // functions/src/exports/statement-engine.ts
-import * as ExcelJS from 'exceljs';
-import { StatementRow, StatementSummary, StatementCurrency } from './types';
+const ExcelJS = require('exceljs');
 import { excelNumFmtForCurrency } from './money';
 
-function safeNumFmt(currency: StatementCurrency): string {
-  // Quantity statements (no currency)
-  if (currency === 'QTY') return '#,##0.00';
+type AnyRow = Record<string, any>;
 
+function safeNumFmt(currency: string) {
+  if (currency === 'QTY') return '#,##0.00';
   try {
-    const fmt = excelNumFmtForCurrency(currency as any);
-    return fmt || '#,##0.00';
+    return excelNumFmtForCurrency(currency) || '#,##0.00';
   } catch {
     return '#,##0.00';
   }
 }
 
+function isoDate(d?: Date | null) {
+  if (!d) return null;
+  return d; // return Date object so Excel treats it as a date
+}
+
+function text(v: any) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
+function autoWidth(ws: any, max = 60) {
+  ws.columns.forEach((col: any) => {
+    let w = col.width || 10;
+    col.eachCell({ includeEmpty: false }, (cell: any) => {
+      const val = cell.value;
+      const len = typeof val === 'string' ? val.length : (val?.richText ? 20 : 12);
+      w = Math.max(w, Math.min(max, len + 2));
+    });
+    col.width = Math.max(col.width || 10, Math.min(max, w));
+  });
+}
+
+function styleHeader(ws: any) {
+  const r = ws.getRow(1);
+  r.font = { bold: true };
+  r.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  r.height = 20;
+
+  r.eachCell((cell: any) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+    };
+  });
+}
+
+function styleRow(ws: any, rowIndex: number) {
+  const r = ws.getRow(rowIndex);
+  r.alignment = { vertical: 'top', wrapText: true };
+  r.eachCell((cell: any) => {
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+      left: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+      bottom: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+      right: { style: 'thin', color: { argb: 'FFF1F5F9' } },
+    };
+  });
+}
+
+function markFxMissing(ws: any, rowIndex: number, colIndexes: number[]) {
+  colIndexes.forEach((c) => {
+    const cell = ws.getCell(rowIndex, c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } }; // light red
+    cell.font = { color: { argb: 'FF991B1B' } };
+  });
+}
+
+function getExpenseColumns(baseCurrency: string) {
+  return [
+    { header: 'Date', key: 'businessDate', width: 12, kind: 'date' },
+    { header: 'Category', key: 'category', width: 16, kind: 'text' },
+    { header: 'Description', key: 'description', width: 40, kind: 'text' },
+    { header: 'Amount', key: 'amountOrig', width: 14, kind: 'moneyOrig' },
+    { header: 'Currency', key: 'currency', width: 10, kind: 'text' },
+    { header: 'FX Pair', key: 'fxPair', width: 12, kind: 'text' },
+    { header: 'Entered Rate', key: 'fxEnteredRate', width: 14, kind: 'number' },
+    { header: 'Rate To Base', key: 'fxRateToBase', width: 14, kind: 'number' },
+    { header: `Amount (${baseCurrency})`, key: 'amountBase', width: 16, kind: 'moneyBase' },
+    { header: 'Paid To', key: 'paidTo', width: 22, kind: 'text' },
+    { header: 'Employee', key: 'employee', width: 18, kind: 'text' },
+    { header: 'Created By', key: 'createdBy', width: 20, kind: 'text' },
+    { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
+    { header: 'FX Status', key: 'fxStatus', width: 12, kind: 'text' },
+  ];
+}
+
+function getLedgerColumns(baseCurrency: string) {
+  return [
+    { header: 'Business Date', key: 'businessDate', width: 12, kind: 'date' },
+    { header: 'Description', key: 'description', width: 40, kind: 'text' },
+    { header: 'Type', key: 'type', width: 12, kind: 'text' },
+    { header: 'Currency', key: 'currency', width: 10, kind: 'text' },
+    { header: 'FX As-Of', key: 'fxAsOf', width: 12, kind: 'date' },
+    { header: 'FX Rate', key: 'fxRateToBase', width: 12, kind: 'number' },
+    { header: 'Debit (Orig)', key: 'debitOrig', width: 14, kind: 'moneyOrig' },
+    { header: 'Credit (Orig)', key: 'creditOrig', width: 14, kind: 'moneyOrig' },
+    { header: `Debit (${baseCurrency})`, key: 'debitBase', width: 16, kind: 'moneyBase' },
+    { header: `Credit (${baseCurrency})`, key: 'creditBase', width: 16, kind: 'moneyBase' },
+    { header: `Running (${baseCurrency})`, key: 'runningBase', width: 18, kind: 'moneyBase' },
+    { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
+    { header: 'FX Status', key: 'fxStatus', width: 12, kind: 'text' },
+  ];
+}
+
+function getProductColumns() {
+  return [
+    { header: 'Date', key: 'businessDate', width: 12, kind: 'date' },
+    { header: 'Description', key: 'description', width: 40, kind: 'text' },
+    { header: 'Type', key: 'type', width: 12, kind: 'text' },
+    { header: 'Qty In', key: 'debitOrig', width: 12, kind: 'qty' },
+    { header: 'Qty Out', key: 'creditOrig', width: 12, kind: 'qty' },
+    { header: 'Running Qty', key: 'runningBase', width: 14, kind: 'qty' },
+    { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
+  ];
+}
+
 export async function buildStatementWorkbook(params: {
-  summary: StatementSummary;
-  rows: StatementRow[];
-  baseCurrency: StatementCurrency;
+  summary: any;
+  rows: AnyRow[];
+  baseCurrency: string;
   locale?: string;
-}): Promise<Buffer> {
-  const { summary, rows, baseCurrency, locale } = params;
+  statementType?: string; // NEW
+}) {
+  const { summary, rows, baseCurrency, statementType } = params;
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'FlowVia';
   wb.created = new Date();
 
-  // ===== Summary sheet =====
+  // ===== Summary sheet (keep yours, only small polish) =====
   const shSummary = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] });
-
   shSummary.columns = [
     { header: '', key: 'k', width: 22 },
-    { header: '', key: 'v', width: 40 },
-    { header: '', key: 'k2', width: 18 },
-    { header: '', key: 'v2', width: 24 },
+    { header: '', key: 'v', width: 46 },
   ];
 
-  shSummary.mergeCells('A1:D1');
+  shSummary.mergeCells('A1:B1');
   shSummary.getCell('A1').value = summary.title;
   shSummary.getCell('A1').font = { size: 16, bold: true };
 
@@ -45,9 +152,8 @@ export async function buildStatementWorkbook(params: {
   shSummary.getCell('B3').value = summary.entityLabel;
 
   shSummary.getCell('A4').value = 'Period';
-  shSummary.getCell('B4').value = `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo
-    .toISOString()
-    .slice(0, 10)}`;
+  shSummary.getCell('B4').value =
+    `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
 
   shSummary.getCell('A5').value = 'Base Currency';
   shSummary.getCell('B5').value = String(summary.baseCurrency);
@@ -71,94 +177,142 @@ export async function buildStatementWorkbook(params: {
   shSummary.getCell('B10').numFmt = baseFmt;
 
   shSummary.getCell('A12').value = 'Warnings';
-  shSummary.getCell('B12').value = summary.warnings.length ? summary.warnings.join('\n') : '—';
+  shSummary.getCell('B12').value = summary.warnings?.length ? summary.warnings.join('\n') : '—';
   shSummary.getCell('B12').alignment = { wrapText: true };
 
   // Totals by original currency
-  let rowStart = 14;
-  shSummary.getCell(`A${rowStart}`).value = 'Totals by currency (original)';
-  shSummary.getCell(`A${rowStart}`).font = { bold: true };
-  rowStart++;
+  let r0 = 14;
+  shSummary.getCell(`A${r0}`).value = 'Totals by currency (original)';
+  shSummary.getCell(`A${r0}`).font = { bold: true };
+  r0++;
 
-  shSummary.getCell(`A${rowStart}`).value = 'Currency';
-  shSummary.getCell(`B${rowStart}`).value = 'Debit';
-  shSummary.getCell(`C${rowStart}`).value = 'Credit';
-  shSummary.getRow(rowStart).font = { bold: true };
-  rowStart++;
+  shSummary.getCell(`A${r0}`).value = 'Currency';
+  shSummary.getCell(`B${r0}`).value = 'Debit';
+  shSummary.getCell(`C${r0}`).value = 'Credit';
+  shSummary.getRow(r0).font = { bold: true };
+  r0++;
 
-  Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]) => {
-    shSummary.getCell(`A${rowStart}`).value = cur;
-    shSummary.getCell(`B${rowStart}`).value = t.debit;
-    shSummary.getCell(`C${rowStart}`).value = t.credit;
-
-    const fmt = safeNumFmt(cur as any);
-    shSummary.getCell(`B${rowStart}`).numFmt = fmt;
-    shSummary.getCell(`C${rowStart}`).numFmt = fmt;
-
-    rowStart++;
+  Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]: any) => {
+    shSummary.getCell(`A${r0}`).value = cur;
+    shSummary.getCell(`B${r0}`).value = t.debit;
+    shSummary.getCell(`C${r0}`).value = t.credit;
+    const fmt = safeNumFmt(cur);
+    shSummary.getCell(`B${r0}`).numFmt = fmt;
+    shSummary.getCell(`C${r0}`).numFmt = fmt;
+    r0++;
   });
 
-  // ===== Rows sheet =====
+  // ===== Statement sheet (report-aware) =====
   const sh = wb.addWorksheet('Statement', { views: [{ state: 'frozen', ySplit: 1 }] });
-  sh.columns = [
-    { header: 'Business Date', key: 'date', width: 14 },
-    { header: 'Description', key: 'desc', width: 40 },
-    { header: 'Reference', key: 'ref', width: 18 },
-    { header: 'Type', key: 'type', width: 12 },
-    { header: 'Currency', key: 'cur', width: 10 },
-    { header: 'FX As-Of', key: 'fxAsOf', width: 14 },
-    { header: 'FX Rate', key: 'fxRate', width: 12 },
-    { header: 'Debit (Orig)', key: 'debitOrig', width: 14 },
-    { header: 'Credit (Orig)', key: 'creditOrig', width: 14 },
-    { header: `Debit (${baseCurrency})`, key: 'debitBase', width: 16 },
-    { header: `Credit (${baseCurrency})`, key: 'creditBase', width: 16 },
-    { header: `Running (${baseCurrency})`, key: 'running', width: 18 },
-  ];
 
-  sh.getRow(1).font = { bold: true };
+  const report = statementType || 'ledger';
+  const cols =
+    report === 'expenses'
+      ? getExpenseColumns(baseCurrency)
+      : report === 'productMovement'
+        ? getProductColumns()
+        : getLedgerColumns(baseCurrency);
 
-  rows.forEach((r) => {
-    sh.addRow({
-      date: r.businessDate ? r.businessDate.toISOString().slice(0, 10) : '',
-      desc: r.description,
-      ref: r.reference,
-      type: r.type,
-      cur: r.currency,
-      fxAsOf: r.fxAsOf ? r.fxAsOf.toISOString().slice(0, 10) : '',
-      fxRate: r.fxStatus === 'MISSING' ? 'FX MISSING' : r.fxRateToBase ?? '',
-      debitOrig: r.debitOrig,
-      creditOrig: r.creditOrig,
-      debitBase: r.debitBase,
-      creditBase: r.creditBase,
-      running: r.runningBase,
+  sh.columns = cols.map(c => ({ header: c.header, key: c.key, width: c.width }));
+
+  styleHeader(sh);
+
+  // Print-friendly
+  sh.pageSetup = {
+    orientation: 'landscape',
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    paperSize: 9, // A4
+    showGridLines: false,
+    horizontalCentered: true,
+  };
+
+  const baseMoneyFmt = safeNumFmt(baseCurrency);
+
+  rows.forEach((r, idx) => {
+    // Normalize values for expense-friendly sheet
+    const amountOrig = (r.amountOrig ?? ((r.debitOrig || 0) - (r.creditOrig || 0))) || 0;
+    const amountBase = (r.amountBase ?? ((r.debitBase || 0) - (r.creditBase || 0))) || 0;
+
+    const rowObj: AnyRow = {
+      businessDate: isoDate(r.businessDate),
+      fxAsOf: isoDate(r.fxAsOf),
+      description: text(r.description),
+      type: text(r.type),
+      reference: text(r.reference),
+
+      currency: text(r.currency),
+
+      debitOrig: r.debitOrig ?? null,
+      creditOrig: r.creditOrig ?? null,
+      debitBase: r.debitBase ?? null,
+      creditBase: r.creditBase ?? null,
+      runningBase: r.runningBase ?? null,
+
+      // Expense-specific fields (will be ignored by ledger sheet)
+      category: text(r.category ?? r.meta?.category ?? r.meta?.expenseType),
+      paidTo: text(r.paidTo ?? r.meta?.paidTo ?? r.meta?.paid_to_seller_name ?? r.meta?.vendor ?? r.meta?.payee),
+      employee: text(r.employee ?? r.meta?.employee ?? r.meta?.employee_name),
+      createdBy: text(r.createdBy ?? r.meta?.createdBy ?? r.meta?.createdByUid),
+      fxPair: text(r.fxPair ?? r.meta?.fxPair ?? r.meta?.enteredPair),
+      fxEnteredRate: r.fxEnteredRate ?? r.meta?.fxEnteredRate ?? r.meta?.enteredRate ?? null,
+      fxRateToBase: r.fxRateToBase ?? null,
+      fxStatus: text(r.fxStatus ?? 'OK'),
+      amountOrig,
+      amountBase,
+    };
+
+    const added = sh.addRow(rowObj);
+
+    // Styling
+    const excelRow = added.number;
+    styleRow(sh, excelRow);
+
+    // Formats per row
+    cols.forEach((c, i) => {
+      const colIndex = i + 1;
+
+      if (c.kind === 'date') {
+        sh.getCell(excelRow, colIndex).numFmt = 'yyyy-mm-dd';
+      }
+
+      if (c.kind === 'moneyOrig') {
+        const fmt = safeNumFmt(r.currency || baseCurrency);
+        sh.getCell(excelRow, colIndex).numFmt = fmt;
+      }
+
+      if (c.kind === 'moneyBase') {
+        sh.getCell(excelRow, colIndex).numFmt = baseMoneyFmt;
+      }
+
+      if (c.kind === 'qty') {
+        sh.getCell(excelRow, colIndex).numFmt = '#,##0.00';
+      }
+
+      if (c.kind === 'number') {
+        sh.getCell(excelRow, colIndex).numFmt = '0.########';
+      }
     });
+
+    // Highlight FX missing rows
+    if (String(r.fxStatus) === 'MISSING') {
+      const fxCols = cols
+        .map((c, i) => ({ c, i: i + 1 }))
+        .filter(x => ['fxEnteredRate', 'fxRateToBase', 'amountBase', 'debitBase', 'creditBase', 'runningBase'].includes(x.c.key))
+        .map(x => x.i);
+
+      markFxMissing(sh, excelRow, fxCols);
+    }
   });
 
-  // Apply formats
-  for (let i = 2; i <= sh.rowCount; i++) {
-    const row = rows[i - 2];
-    const fmtOrig = safeNumFmt(row.currency);
-    sh.getCell(i, 8).numFmt = fmtOrig;
-    sh.getCell(i, 9).numFmt = fmtOrig;
+  // Filter + autosize
+  sh.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: cols.length },
+  };
 
-    sh.getCell(i, 10).numFmt = baseFmt;
-    sh.getCell(i, 11).numFmt = baseFmt;
-    sh.getCell(i, 12).numFmt = baseFmt;
-  }
-
-  sh.autoFilter = { from: 'A1', to: 'L1' };
-
-  const totalsRowIndex = sh.rowCount + 2;
-  sh.getCell(`G${totalsRowIndex}`).value = 'TOTALS';
-  sh.getCell(`G${totalsRowIndex}`).font = { bold: true };
-
-  sh.getCell(totalsRowIndex, 10).value = { formula: `SUM(J2:J${totalsRowIndex - 2})` };
-  sh.getCell(totalsRowIndex, 11).value = { formula: `SUM(K2:K${totalsRowIndex - 2})` };
-  sh.getCell(totalsRowIndex, 12).value = { formula: `L${totalsRowIndex - 1}` };
-
-  sh.getCell(totalsRowIndex, 10).numFmt = baseFmt;
-  sh.getCell(totalsRowIndex, 11).numFmt = baseFmt;
-  sh.getCell(totalsRowIndex, 12).numFmt = baseFmt;
+  autoWidth(sh);
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf as any);
