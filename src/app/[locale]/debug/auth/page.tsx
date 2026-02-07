@@ -9,8 +9,9 @@ import { IdTokenResult } from 'firebase/auth';
 import { useTranslation } from 'react-i18next';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
 
 // A component to display a piece of data
 const DebugInfo = ({ label, value, note }: { label: string; value: any, note?: string }) => (
@@ -38,6 +39,10 @@ export default function DebugAuthPage() {
   const [backupResult, setBackupResult] = useState<any>(null);
   const [isNormalizing, setIsNormalizing] = useState(false);
   const [normalizeResult, setNormalizeResult] = useState<any>(null);
+
+  // New state for displaying the ID token
+  const [idToken, setIdToken] = useState('');
+  const [isFetchingToken, setIsFetchingToken] = useState(false);
 
   // UZS Migration State
   const [uzsDetectResult, setUzsDetectResult] = useState<any>(null);
@@ -206,6 +211,28 @@ export default function DebugAuthPage() {
     }
   }
 
+  const handleShowToken = async () => {
+    if (!auth.currentUser) {
+        toast({ variant: "destructive", title: "Not Authenticated" });
+        return;
+    }
+    setIsFetchingToken(true);
+    try {
+        const token = await auth.currentUser.getIdToken(true); // Force refresh
+        setIdToken(token);
+        toast({ title: "Token Generated", description: "You can now copy the token below." });
+    } catch (err: any) {
+        toast({ variant: "destructive", title: "Failed to Get Token", description: err.message });
+    } finally {
+        setIsFetchingToken(false);
+    }
+  }
+
+  const handleCopyToken = () => {
+    navigator.clipboard.writeText(idToken);
+    toast({ title: "Copied to Clipboard" });
+  }
+
   if (isUserLoading || !sessionReady) {
     return (
         <div className="flex h-64 items-center justify-center">
@@ -283,6 +310,23 @@ export default function DebugAuthPage() {
             <CardContent>
                 <div className="space-y-4">
 
+                    <div className="border-t pt-4 space-y-4">
+                        <h4 className="font-semibold">Generate ID Token</h4>
+                        <p className="text-sm text-muted-foreground mb-2">Use this to get your ID token for authenticating terminal commands.</p>
+                        <Button onClick={handleShowToken} disabled={isFetchingToken}>
+                            {isFetchingToken ? "Generating..." : "Show My ID Token"}
+                        </Button>
+                        {idToken && (
+                           <div className="space-y-2">
+                               <Textarea value={idToken} readOnly rows={5} className="font-mono text-xs" />
+                               <Button variant="outline" size="sm" onClick={handleCopyToken}>
+                                   <Copy className="mr-2 h-4 w-4" />
+                                   Copy Token
+                               </Button>
+                           </div>
+                        )}
+                    </div>
+                    
                     <div className="border-t pt-4 space-y-4">
                         <h4 className="font-semibold">UZS Decimal Migration</h4>
                         <p className="text-sm text-muted-foreground mb-2">Tools to fix historical UZS data stored with 2 decimals instead of 0.</p>
