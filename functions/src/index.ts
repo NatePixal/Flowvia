@@ -1,4 +1,5 @@
 
+
 import * as functions from 'firebase-functions/v1';
 import { HttpsError } from 'firebase-functions/v1/https';
 import { db } from './admin';
@@ -11,6 +12,10 @@ import { buildProductMovementStatement } from './exports/builders/product';
 import { exportStockReportExcel } from './exports/stockReport';
 import { Currency, Company } from './types';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+
+// Export all functions from other files to make them deployable
+export * from './maintenance';
+export * from './financials';
 
 function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
   const role = auth?.token?.role;
