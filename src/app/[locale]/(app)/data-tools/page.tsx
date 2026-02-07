@@ -16,20 +16,31 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { add } from "date-fns";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Code } from "lucide-react";
 
 type StatementType = 'client' | 'supplier' | 'expenses' | 'productMovement' | 'stockReport';
 type StockMode = "range" | "asOfToday" | "both";
 
 export default function DataToolsPage() {
   const { t, i18n } = useTranslation();
-  const { firestore, companyId, userProfile, firebaseApp } = useFirebase();
+  const { firestore, companyId: sessionCompanyId, userProfile, firebaseApp, isDeveloper } = useFirebase();
   const { toast } = useToast();
   const canExportStatement = userProfile?.role === 'admin' || userProfile?.role === 'developer';
 
-  const { data: products, loading: productsLoading } = useCompanyCollection<Product>("products");
-  const { data: clients, loading: clientsLoading } = useCompanyCollection<Client>("clients");
-  const { data: suppliers, loading: suppliersLoading } = useCompanyCollection<Supplier>("suppliers");
+  // --- Developer-specific state ---
+  const [devCompanyId, setDevCompanyId] = useState("");
+  const targetCompanyId = isDeveloper ? devCompanyId : sessionCompanyId;
 
+  // --- Data Fetching ---
+  const { data: products, loading: productsLoading } = useCompanyCollection<Product>(targetCompanyId ? `products` : null);
+  const { data: clients, loading: clientsLoading } = useCompanyCollection<Client>(targetCompanyId ? `clients` : null);
+  const { data: suppliers, loading: suppliersLoading } = useCompanyCollection<Supplier>(targetCompanyId ? `suppliers` : null);
+  
+  const isDataLoading = productsLoading || clientsLoading || suppliersLoading;
+
+  // --- Form State ---
   const [exportingType, setExportingType] = useState<StatementType | null>(null);
   const [statementDateRange, setStatementDateRange] = useState<DateRange | undefined>({
     from: add(new Date(), { days: -30 }),
@@ -42,7 +53,10 @@ export default function DataToolsPage() {
   const [stockMode, setStockMode] = useState<StockMode>("range");
 
   const handleExportStatement = async (statementType: StatementType) => {
-    if (!canExportStatement || !companyId || !statementDateRange?.from) return;
+    if (!canExportStatement || !targetCompanyId || !statementDateRange?.from) {
+      toast({ variant: 'destructive', title: 'Missing required data', description: 'Cannot export without a Company ID and Date Range.'});
+      return;
+    }
 
     setExportingType(statementType);
 
@@ -51,50 +65,29 @@ export default function DataToolsPage() {
       const toISO = (statementDateRange.to || statementDateRange.from).toISOString().slice(0, 10);
       const baseCurrency = userProfile?.currency || 'USD';
 
-      // 1. Build payload based on type
-      const payload: any = { companyId, statementType, dateFrom: fromISO, dateTo: toISO };
+      const payload: any = { companyId: targetCompanyId, statementType, dateFrom: fromISO, dateTo: toISO, locale: i18n.language };
 
       if (statementType === 'client') {
         if (!selectedClient) { throw new Error('Client not selected'); }
         payload.targetId = selectedClient;
-        payload.baseCurrency = baseCurrency;
-
       } else if (statementType === 'supplier') {
         if (!selectedSupplier) { throw new Error('Supplier not selected'); }
-        const supplier = suppliers.find(s => s.id === selectedSupplier);
-        if (!supplier) throw new Error('Supplier details not found');
         payload.targetId = selectedSupplier;
-        payload.supplierName = supplier.name;
-        payload.baseCurrency = baseCurrency;
-
-      } else if (statementType === 'expenses') {
-        payload.baseCurrency = baseCurrency;
-
       } else if (statementType === 'productMovement') {
         if (!selectedProduct) { throw new Error('Product not selected'); }
-        const product = products.find(p => p.id === selectedProduct);
-        if (!product) throw new Error('Product details not found');
         payload.targetId = selectedProduct;
-        payload.productCode = product.productCode;
-        payload.baseCurrency = baseCurrency;
-        
       } else if (statementType === 'stockReport') {
         payload.stockMode = stockMode;
-        payload.baseCurrency = baseCurrency;
       }
       
-      // Add locale for i18n in reports
-      payload.locale = i18n.language;
+      payload.baseCurrency = baseCurrency;
 
-      // 2. Call the function
       const fn = httpsCallable(getFunctions(firebaseApp, 'us-central1'), "exportStatement");
       const res: any = await fn(payload);
       
-      // 3. Handle response and download
       const { base64, filename, mimeType, warnings } = res.data || {};
 
       if (!base64) {
-        // This will catch backend-thrown errors which are in err.message, or just a malformed success response
         throw new Error(res.data?.message || "Invalid response from server: base64 data is missing.");
       }
 
@@ -108,16 +101,13 @@ export default function DataToolsPage() {
         byteNumbers[i] = byteChars.charCodeAt(i);
       }
 
-      const blob = new Blob(
-        [new Uint8Array(byteNumbers)],
-        { type: mimeType || "application/octet-stream" }
-      );
+      const blob = new Blob([new Uint8Array(byteNumbers)], { type: mimeType || "application/octet-stream" });
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename || "export.xlsx";
-      document.body.appendChild(a); // For Firefox compatibility
+      document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
@@ -126,14 +116,13 @@ export default function DataToolsPage() {
 
     } catch (err: any) {
       console.error("Statement export failed:", err);
-      // This will now show the real backend error.
       toast({ variant: 'destructive', title: 'Export Failed', description: err.message || err.details || 'An unknown error occurred.' });
     } finally {
       setExportingType(null);
     }
   };
 
-  if (!firestore || !companyId) {
+  if (!firestore) {
     return <div className="p-6">{t('misc.loading')}...</div>;
   }
 
@@ -145,101 +134,120 @@ export default function DataToolsPage() {
           <CardDescription>{"Generate bank-style accounting statements for auditing and analysis."}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+            
+            {isDeveloper && (
+              <Alert variant="default" className="border-amber-500/50 bg-amber-500/5">
+                <Code className="h-4 w-4" />
+                <AlertTitle>Developer Mode</AlertTitle>
+                <AlertDescription>
+                  <div className="space-y-2 mt-2">
+                    <Label htmlFor="dev-company-id">Target Company ID</Label>
+                    <Input id="dev-company-id" value={devCompanyId} onChange={(e) => setDevCompanyId(e.target.value)} placeholder="Enter Company ID to run reports for..." />
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="space-y-2">
                 <Label>Date Range</Label>
                 <DateRangePicker date={statementDateRange} onDateChange={setStatementDateRange} />
             </div>
 
-            {/* Stock & Demand Report */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="space-y-2">
-                    <Label>Stock & Demand Report</Label>
-                     <Select value={stockMode} onValueChange={(v) => setStockMode(v as StockMode)} disabled={!!exportingType}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="range">Date Range Movement</SelectItem>
-                            <SelectItem value="asOfToday">As of Today</SelectItem>
-                            <SelectItem value="both">Both</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('stockReport')} disabled={!!exportingType || !statementDateRange?.from}>
-                       {exportingType === 'stockReport' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                       Export Stock Report
-                    </Button>
-                </div>
-            </div>
+            {/* Gray out section if no company is targeted */}
+            <div className={cn("space-y-6 transition-opacity", (!targetCompanyId || isDataLoading) && "opacity-50 pointer-events-none")}>
+              {isDataLoading && <div className="text-sm text-muted-foreground">Loading company data...</div>}
 
-            {/* Client Statement */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="space-y-2">
-                    <Label>Client Statement</Label>
-                    <Select value={selectedClient} onValueChange={setSelectedClient} disabled={clientsLoading}>
-                        <SelectTrigger><SelectValue placeholder="Select a client..." /></SelectTrigger>
-                        <SelectContent>
-                            {(clients || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('client')} disabled={!!exportingType || !statementDateRange?.from || !selectedClient}>
-                       {exportingType === 'client' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                       Export Client Statement
-                    </Button>
-                </div>
-            </div>
+              {/* Stock & Demand Report */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-2">
+                      <Label>Stock & Demand Report</Label>
+                      <Select value={stockMode} onValueChange={(v) => setStockMode(v as StockMode)} disabled={!!exportingType}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="range">Date Range Movement</SelectItem>
+                              <SelectItem value="asOfToday">As of Today</SelectItem>
+                              <SelectItem value="both">Both</SelectItem>
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="flex items-end">
+                      <Button onClick={() => handleExportStatement('stockReport')} disabled={!!exportingType || !statementDateRange?.from}>
+                        {exportingType === 'stockReport' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Export Stock Report
+                      </Button>
+                  </div>
+              </div>
 
-            {/* Supplier Statement */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="space-y-2">
-                    <Label>Supplier Statement</Label>
-                    <Select value={selectedSupplier} onValueChange={setSelectedSupplier} disabled={suppliersLoading}>
-                        <SelectTrigger><SelectValue placeholder="Select a supplier..." /></SelectTrigger>
-                        <SelectContent>
-                            {(suppliers || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('supplier')} disabled={!!exportingType || !statementDateRange?.from || !selectedSupplier}>
-                       {exportingType === 'supplier' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                       Export Supplier Statement
-                    </Button>
-                </div>
-            </div>
+              {/* Client Statement */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-2">
+                      <Label>Client Statement</Label>
+                      <Select value={selectedClient} onValueChange={setSelectedClient}>
+                          <SelectTrigger><SelectValue placeholder="Select a client..." /></SelectTrigger>
+                          <SelectContent>
+                              {(clients || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="flex items-end">
+                      <Button onClick={() => handleExportStatement('client')} disabled={!!exportingType || !statementDateRange?.from || !selectedClient}>
+                        {exportingType === 'client' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Export Client Statement
+                      </Button>
+                  </div>
+              </div>
 
-            {/* Expenses Statement */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="space-y-2">
-                    <Label>Expenses Statement</Label>
-                    <p className="text-sm text-muted-foreground">Export all expenses within the selected date range.</p>
-                </div>
-                <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('expenses')} disabled={!!exportingType || !statementDateRange?.from}>
-                        {exportingType === 'expenses' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Export Expense Statement
-                    </Button>
-                </div>
-            </div>
+              {/* Supplier Statement */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-2">
+                      <Label>Supplier Statement</Label>
+                      <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+                          <SelectTrigger><SelectValue placeholder="Select a supplier..." /></SelectTrigger>
+                          <SelectContent>
+                              {(suppliers || []).map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="flex items-end">
+                      <Button onClick={() => handleExportStatement('supplier')} disabled={!!exportingType || !statementDateRange?.from || !selectedSupplier}>
+                        {exportingType === 'supplier' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Export Supplier Statement
+                      </Button>
+                  </div>
+              </div>
 
-            {/* Product Movement Statement */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                <div className="space-y-2">
-                    <Label>Product Movement</Label>
-                    <Select value={selectedProduct} onValueChange={setSelectedProduct} disabled={productsLoading}>
-                        <SelectTrigger><SelectValue placeholder="Select a product..." /></SelectTrigger>
-                        <SelectContent>
-                            {(products || []).map(p => <SelectItem key={p.id} value={p.id}>{p.name} ({p.productCode})</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="flex items-end">
-                    <Button onClick={() => handleExportStatement('productMovement')} disabled={!!exportingType || !statementDateRange?.from || !selectedProduct}>
-                       {exportingType === 'productMovement' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                       Export Product Statement
-                    </Button>
-                </div>
+              {/* Expenses Statement */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-2">
+                      <Label>Expenses Statement</Label>
+                      <p className="text-sm text-muted-foreground">Export all expenses within the selected date range.</p>
+                  </div>
+                  <div className="flex items-end">
+                      <Button onClick={() => handleExportStatement('expenses')} disabled={!!exportingType || !statementDateRange?.from}>
+                          {exportingType === 'expenses' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Export Expense Statement
+                      </Button>
+                  </div>
+              </div>
+
+              {/* Product Movement Statement */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-2">
+                      <Label>Product Movement</Label>
+                      <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                          <SelectTrigger><SelectValue placeholder="Select a product..." /></SelectTrigger>
+                          <SelectContent>
+                              {(products || []).map(p => <SelectItem key={p.id} value={p.id}>{p.name} ({p.productCode})</SelectItem>)}
+                          </SelectContent>
+                      </Select>
+                  </div>
+                  <div className="flex items-end">
+                      <Button onClick={() => handleExportStatement('productMovement')} disabled={!!exportingType || !statementDateRange?.from || !selectedProduct}>
+                        {exportingType === 'productMovement' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Export Product Statement
+                      </Button>
+                  </div>
+              </div>
             </div>
 
         </CardContent>
