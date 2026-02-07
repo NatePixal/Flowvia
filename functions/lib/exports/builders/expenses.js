@@ -17,7 +17,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildExpensesStatement(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const { companyId, from, to, baseCurrency } = params;
     // Adjust collection name if needed (dailyExpenses vs expenses)
     const ref = admin_1.db.collection(`companies/${companyId}/dailyExpenses`);
@@ -104,7 +104,6 @@ async function buildExpensesStatement(params) {
             reference: doc.id,
             type: 'expense',
             currency,
-            // ledger fields (kept for consistency)
             fxAsOf,
             fxRateToBase,
             fxStatus,
@@ -113,19 +112,15 @@ async function buildExpensesStatement(params) {
             debitBase,
             creditBase,
             runningBase,
-            // ✅ extra fields for the new Engine
-            category,
-            paidTo,
-            employee,
-            createdBy,
-            fxPair: ((_k = e.fx) === null || _k === void 0 ? void 0 : _k.enteredPair) || '',
-            fxEnteredRate: (_m = (_l = e.fx) === null || _l === void 0 ? void 0 : _l.enteredRate) !== null && _m !== void 0 ? _m : null,
             meta: {
-                expenseType: category,
-                paid_to_seller_name: paidTo,
-                employee_name: employee,
-                enteredPair: (_o = e.fx) === null || _o === void 0 ? void 0 : _o.enteredPair,
-                enteredRate: (_p = e.fx) === null || _p === void 0 ? void 0 : _p.enteredRate,
+                category,
+                paidTo,
+                employee,
+                createdBy,
+                fxPair: ((_k = e.fx) === null || _k === void 0 ? void 0 : _k.enteredPair) || '',
+                fxEnteredRate: (_m = (_l = e.fx) === null || _l === void 0 ? void 0 : _l.enteredRate) !== null && _m !== void 0 ? _m : null,
+                amountOrig: debitOrig,
+                amountBase: debitBase,
             },
         });
     }
@@ -134,7 +129,7 @@ async function buildExpensesStatement(params) {
     }
     const totalDebitBase = rows.reduce((s, x) => s + (x.debitBase || 0), 0);
     const totalCreditBase = rows.reduce((s, x) => s + (x.creditBase || 0), 0);
-    const closingBase = rows.length ? ((_q = rows[rows.length - 1].runningBase) !== null && _q !== void 0 ? _q : openingBase) : openingBase;
+    const closingBase = rows.length ? ((_o = rows[rows.length - 1].runningBase) !== null && _o !== void 0 ? _o : openingBase) : openingBase;
     const summary = {
         title: 'Expense Statement',
         companyId,

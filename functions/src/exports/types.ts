@@ -18,6 +18,20 @@ export interface StatementRow {
     debitBase?: number;
     creditBase?: number;
     runningBase?: number;
+
+    // ✅ Extra fields used by the Excel Engine for “app-like” exports (expenses, etc.)
+    category?: string;
+    paidTo?: string;
+    employee?: string;
+    createdBy?: string;
+
+    fxPair?: string;
+    fxEnteredRate?: number | null;
+
+    amountOrig?: number;  // for expense-style sheets
+    amountBase?: number;
+
+    meta?: Record<string, any>; // keep this if you already have it; add if missing
 }
 export interface StatementSummary {
     title: string;
@@ -39,4 +53,3 @@ export interface StatementSummary {
         };
     };
 }
-
