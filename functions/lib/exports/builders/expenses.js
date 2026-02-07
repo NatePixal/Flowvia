@@ -17,7 +17,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildExpensesStatement(params) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
     const { companyId, from, to, baseCurrency } = params;
     // Adjust collection name if needed (dailyExpenses vs expenses)
     const ref = admin_1.db.collection(`companies/${companyId}/dailyExpenses`);
@@ -39,29 +39,49 @@ async function buildExpensesStatement(params) {
     const rows = [];
     for (const doc of rangeSnap.docs) {
         const e = doc.data();
-        const date = (_b = (_a = toDate(e[DATE_FIELD])) !== null && _a !== void 0 ? _a : toDate(e.createdAt)) !== null && _b !== void 0 ? _b : from;
+        const date = (_c = (_b = (_a = toDate(e.businessDate)) !== null && _a !== void 0 ? _a : toDate(e.date)) !== null && _b !== void 0 ? _b : toDate(e.createdAt)) !== null && _c !== void 0 ? _c : from;
         const currency = e.currency || baseCurrency;
-        // If you support refunds, set creditMinor accordingly.
-        const debitMinor = Number((_d = (_c = e.amountMinor) !== null && _c !== void 0 ? _c : e.totalMinor) !== null && _d !== void 0 ? _d : 0);
-        const creditMinor = Number((_e = e.refundMinor) !== null && _e !== void 0 ? _e : 0);
+        // amountMinor is what your UI stores (UZS etc)
+        const debitMinor = Number((_e = (_d = e.amountMinor) !== null && _d !== void 0 ? _d : e.totalMinor) !== null && _e !== void 0 ? _e : 0);
+        const creditMinor = Number((_f = e.refundMinor) !== null && _f !== void 0 ? _f : 0);
         const debitOrig = (0, money_1.minorToMajor)(debitMinor, currency);
         const creditOrig = (0, money_1.minorToMajor)(creditMinor, currency);
         totalsByCurrencyOrig[currency] || (totalsByCurrencyOrig[currency] = { debit: 0, credit: 0 });
         totalsByCurrencyOrig[currency].debit += debitOrig;
         totalsByCurrencyOrig[currency].credit += creditOrig;
+        // ✅ READ LOCKED FX FROM e.fx.* (your real data)
+        const storedRate = typeof ((_g = e.fx) === null || _g === void 0 ? void 0 : _g.rateToBase) === 'number' ? e.fx.rateToBase : e.fxRateToBase;
+        const storedAsOf = (_j = toDate((_h = e.fx) === null || _h === void 0 ? void 0 : _h.capturedAt)) !== null && _j !== void 0 ? _j : toDate(e.fxAsOf);
+        // If you already store base minor, use it even if snapshots are missing:
+        const baseMinor = typeof e.amountBaseMinor === 'number' ? e.amountBaseMinor : null;
         const fx = await (0, fx_1.resolveFxToBase)({
             companyId,
             txCurrency: currency,
             baseCurrency,
             txDate: date,
-            stored: { fxRateToBase: e.fxRateToBase, fxAsOf: e.fxAsOf },
+            stored: { fxRateToBase: storedRate, fxAsOf: storedAsOf },
         });
         let debitBase = 0;
         let creditBase = 0;
         let fxAsOf = null;
         let fxRateToBase = null;
         let fxStatus = 'OK';
-        if (fx.ok) {
+        if (currency === baseCurrency) {
+            fxAsOf = date;
+            fxRateToBase = 1;
+            debitBase = debitOrig;
+            creditBase = creditOrig;
+            runningBase = runningBase + debitBase - creditBase;
+        }
+        else if (baseMinor !== null) {
+            // ✅ strongest source: saved base amount
+            debitBase = (0, money_1.minorToMajor)(baseMinor, baseCurrency);
+            fxRateToBase = debitOrig > 0 ? (debitBase / debitOrig) : (fx.ok ? fx.rateToBase : null);
+            fxAsOf = storedAsOf !== null && storedAsOf !== void 0 ? storedAsOf : (fx.ok ? fx.asOf : null);
+            fxStatus = 'STORED_BASE';
+            runningBase = runningBase + debitBase - creditBase;
+        }
+        else if (fx.ok) {
             fxAsOf = fx.asOf;
             fxRateToBase = fx.rateToBase;
             debitBase = debitOrig * fx.rateToBase;
@@ -72,13 +92,19 @@ async function buildExpensesStatement(params) {
             fxStatus = 'MISSING';
             missingFxCount++;
         }
-        const description = e.vendor || e.payee || e.note || 'Expense';
+        // ✅ Use YOUR UI fields
+        const category = e.expenseType || '';
+        const desc = (e.description || e.note || '').trim() || 'Expense';
+        const paidTo = e.paid_to_seller_name || e.vendor || e.payee || '';
+        const employee = e.employee_name || '';
+        const createdBy = e.createdBy || '';
         rows.push({
             businessDate: date,
-            description,
+            description: desc,
             reference: doc.id,
             type: 'expense',
             currency,
+            // ledger fields (kept for consistency)
             fxAsOf,
             fxRateToBase,
             fxStatus,
@@ -87,6 +113,20 @@ async function buildExpensesStatement(params) {
             debitBase,
             creditBase,
             runningBase,
+            // ✅ extra fields for the new Engine
+            category,
+            paidTo,
+            employee,
+            createdBy,
+            fxPair: ((_k = e.fx) === null || _k === void 0 ? void 0 : _k.enteredPair) || '',
+            fxEnteredRate: (_m = (_l = e.fx) === null || _l === void 0 ? void 0 : _l.enteredRate) !== null && _m !== void 0 ? _m : null,
+            meta: {
+                expenseType: category,
+                paid_to_seller_name: paidTo,
+                employee_name: employee,
+                enteredPair: (_o = e.fx) === null || _o === void 0 ? void 0 : _o.enteredPair,
+                enteredRate: (_p = e.fx) === null || _p === void 0 ? void 0 : _p.enteredRate,
+            },
         });
     }
     if (missingFxCount > 0) {
@@ -94,7 +134,7 @@ async function buildExpensesStatement(params) {
     }
     const totalDebitBase = rows.reduce((s, x) => s + (x.debitBase || 0), 0);
     const totalCreditBase = rows.reduce((s, x) => s + (x.creditBase || 0), 0);
-    const closingBase = rows.length ? ((_f = rows[rows.length - 1].runningBase) !== null && _f !== void 0 ? _f : openingBase) : openingBase;
+    const closingBase = rows.length ? ((_q = rows[rows.length - 1].runningBase) !== null && _q !== void 0 ? _q : openingBase) : openingBase;
     const summary = {
         title: 'Expense Statement',
         companyId,

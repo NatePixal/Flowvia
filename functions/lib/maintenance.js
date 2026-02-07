@@ -1,13 +1,64 @@
 "use strict";
 // functions/src/maintenance.ts
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.normalizeIncomingDates = exports.createBackup = exports.auditIncomingDateTypes = void 0;
+exports.backfillBusinessDates = exports.normalizeIncomingDates = exports.createBackup = exports.auditIncomingDateTypes = exports.ensureExpenseBusinessDate = exports.ensureLedgerBusinessDate = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const firestore_1 = require("firebase-admin/firestore");
 if (!admin.apps.length) {
     admin.initializeApp();
 }
 const firestore = admin.firestore();
+function toBusinessDayFromCreatedAt(ts, tz = 'Asia/Tashkent') {
+    const d = ts.toDate();
+    const parts = new Intl.DateTimeFormat('en', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === 'year').value;
+    const m = parts.find(p => p.type === 'month').value;
+    const day = parts.find(p => p.type === 'day').value;
+    return `${y}-${m}-${day}`; // YYYY-MM-DD
+}
+function businessDayToBusinessDate(businessDay) {
+    return firestore_1.Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+}
+// Firestore Triggers for automatically adding businessDate on new documents
+exports.ensureLedgerBusinessDate = functions
+    .region('us-central1')
+    .firestore.document('companies/{companyId}/clients/{clientId}/ledger/{entryId}')
+    .onCreate(async (snap) => {
+    var _a;
+    const data = snap.data() || {};
+    if (data.businessDate)
+        return null;
+    const createdAt = data.createdAt;
+    const businessDay = (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+    return snap.ref.update({
+        businessDay,
+        businessDate: businessDayToBusinessDate(businessDay),
+        createdAt: (_a = data.createdAt) !== null && _a !== void 0 ? _a : firestore_1.FieldValue.serverTimestamp(),
+    });
+});
+exports.ensureExpenseBusinessDate = functions
+    .region('us-central1')
+    .firestore.document('companies/{companyId}/dailyExpenses/{expenseId}')
+    .onCreate(async (snap) => {
+    var _a;
+    const data = snap.data() || {};
+    if (data.businessDate)
+        return null;
+    const createdAt = data.createdAt;
+    const businessDay = (typeof data.businessDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.businessDay))
+        ? data.businessDay
+        : (createdAt ? toBusinessDayFromCreatedAt(createdAt) : new Date().toISOString().slice(0, 10));
+    return snap.ref.update({
+        businessDay,
+        businessDate: businessDayToBusinessDate(businessDay),
+        createdAt: (_a = data.createdAt) !== null && _a !== void 0 ? _a : firestore_1.FieldValue.serverTimestamp(),
+    });
+});
 exports.auditIncomingDateTypes = functions.region('us-central1').https.onCall(async (data, context) => {
     if (!context.auth || (context.auth.token.role !== 'developer' && context.auth.token.role !== 'admin')) {
         throw new functions.https.HttpsError('permission-denied', 'User must be a developer or admin.');
@@ -163,6 +214,116 @@ exports.normalizeIncomingDates = functions.region('us-central1').runWith({ timeo
         updatedCount,
         errorCount,
         nextStartAfterDocId: snapshot.docs.length < pageSize ? null : lastDocId
+    };
+});
+exports.backfillBusinessDates = functions
+    .region('us-central1')
+    .runWith({ timeoutSeconds: 540, memory: '1GB' })
+    .https.onCall(async (data, context) => {
+    var _a, _b;
+    if (((_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.role) !== 'developer') {
+        throw new functions.https.HttpsError('permission-denied', 'Developer access required.');
+    }
+    const { dryRun = true } = data;
+    const allLogs = [];
+    const totalCounts = {
+        expenses: { processed: 0, updated: 0 },
+        sales: { processed: 0, updated: 0 },
+        clientLedgers: { processed: 0, updated: 0 },
+        supplierLedgers: { processed: 0, updated: 0 },
+        incomingProducts: { processed: 0, updated: 0 },
+    };
+    const companiesSnap = await firestore.collection('companies').get();
+    allLogs.push(`Found ${companiesSnap.size} companies to process.`);
+    for (const companyDoc of companiesSnap.docs) {
+        const companyId = companyDoc.id;
+        const companyName = companyDoc.data().name || 'No Name';
+        allLogs.push(`--- Processing Company: ${companyId} (${companyName}) ---`);
+        const counts = {
+            expenses: { processed: 0, updated: 0 },
+            sales: { processed: 0, updated: 0 },
+            clientLedgers: { processed: 0, updated: 0 },
+            supplierLedgers: { processed: 0, updated: 0 },
+            incomingProducts: { processed: 0, updated: 0 },
+        };
+        const batchSize = 400;
+        async function processCollection(collectionPath, dateFields, category) {
+            const collectionRef = firestore.collection(`companies/${companyId}/${collectionPath}`);
+            const snapshot = await collectionRef.get();
+            let writeCount = 0;
+            let batch = firestore.batch();
+            for (const doc of snapshot.docs) {
+                counts[category].processed++;
+                const docData = doc.data();
+                if (docData.businessDate)
+                    continue;
+                let sourceDate = null;
+                for (const field of dateFields) {
+                    if (docData[field]) {
+                        const d = docData[field];
+                        if (d instanceof admin.firestore.Timestamp) {
+                            sourceDate = d.toDate();
+                            break;
+                        }
+                        if (d instanceof Date) {
+                            sourceDate = d;
+                            break;
+                        }
+                        if (typeof d === 'string' || typeof d === 'number') {
+                            const parsed = new Date(d);
+                            if (!isNaN(parsed.getTime())) {
+                                sourceDate = parsed;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (sourceDate) {
+                    const y = sourceDate.getUTCFullYear();
+                    const m = String(sourceDate.getUTCMonth() + 1).padStart(2, '0');
+                    const d = String(sourceDate.getUTCDate()).padStart(2, '0');
+                    const businessDay = `${y}-${m}-${d}`;
+                    const businessDate = admin.firestore.Timestamp.fromDate(new Date(`${businessDay}T00:00:00.000Z`));
+                    counts[category].updated++;
+                    if (!dryRun) {
+                        batch.update(doc.ref, { businessDay, businessDate });
+                        writeCount++;
+                        if (writeCount >= batchSize) {
+                            await batch.commit();
+                            batch = firestore.batch();
+                            writeCount = 0;
+                        }
+                    }
+                }
+            }
+            if (!dryRun && writeCount > 0) {
+                await batch.commit();
+            }
+            allLogs.push(`  ${collectionPath}: Processed ${counts[category].processed}, Found-To-Update ${counts[category].updated}`);
+        }
+        async function processSubCollections(parentCollection, subCollection, dateFields, category) {
+            const parentDocs = await firestore.collection(`companies/${companyId}/${parentCollection}`).get();
+            for (const parentDoc of parentDocs.docs) {
+                await processCollection(`${parentCollection}/${parentDoc.id}/${subCollection}`, dateFields, category);
+            }
+        }
+        await processCollection('dailyExpenses', ['date', 'createdAt'], 'expenses');
+        await processCollection('sales', ['date', 'createdAt'], 'sales');
+        await processCollection('incomingProducts', ['incomeDate', 'date', 'createdAt'], 'incomingProducts');
+        await processSubCollections('clients', 'ledger', ['purchaseDate', 'createdAt'], 'clientLedgers');
+        await processSubCollections('suppliers', 'ledger', ['createdAt'], 'supplierLedgers');
+        for (const key of Object.keys(totalCounts)) {
+            const cat = key;
+            totalCounts[cat].processed += counts[cat].processed;
+            totalCounts[cat].updated += counts[cat].updated;
+        }
+    }
+    return {
+        success: true,
+        dryRun,
+        companiesProcessed: companiesSnap.size,
+        logs: allLogs,
+        counts: totalCounts
     };
 });
 //# sourceMappingURL=maintenance.js.map

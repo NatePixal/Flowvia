@@ -14,7 +14,7 @@ export interface StatementRow {
     creditOrig?: number;
     fxAsOf?: Date | null;
     fxRateToBase?: number | null;
-    fxStatus?: 'OK' | 'MISSING';
+    fxStatus?: 'OK' | 'MISSING' | 'STORED_BASE';
     debitBase?: number;
     creditBase?: number;
     runningBase?: number;
@@ -39,3 +39,4 @@ export interface StatementSummary {
         };
     };
 }
+
