@@ -1,4 +1,3 @@
-
 // functions/src/exports/builders/expenses.ts
 import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../admin';
@@ -125,8 +124,6 @@ export async function buildExpensesStatement(params: {
       reference: doc.id,
       type: 'expense',
       currency,
-
-      // ledger fields (kept for consistency)
       fxAsOf,
       fxRateToBase,
       fxStatus,
@@ -135,21 +132,16 @@ export async function buildExpensesStatement(params: {
       debitBase,
       creditBase,
       runningBase,
-
-      // ✅ extra fields for the new Engine
-      category,
-      paidTo,
-      employee,
-      createdBy,
-      fxPair: e.fx?.enteredPair || '',
-      fxEnteredRate: e.fx?.enteredRate ?? null,
-
+    
       meta: {
-        expenseType: category,
-        paid_to_seller_name: paidTo,
-        employee_name: employee,
-        enteredPair: e.fx?.enteredPair,
-        enteredRate: e.fx?.enteredRate,
+        category,
+        paidTo,
+        employee,
+        createdBy,
+        fxPair: e.fx?.enteredPair || '',
+        fxEnteredRate: e.fx?.enteredRate ?? null,
+        amountOrig: debitOrig,
+        amountBase: debitBase,
       },
     });
   }
