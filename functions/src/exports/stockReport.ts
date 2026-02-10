@@ -1,4 +1,3 @@
-
 import * as admin from "firebase-admin";
 import * as ExcelJS from "exceljs";
 import {
@@ -10,15 +9,19 @@ import {
   styleTableHeader,
   styleTableBodyRow,
 } from "./exportUtils";
+import { fromMinor } from "./money";
+import type { Product } from "../types";
 
 type StockMode = "range" | "asOfToday" | "both";
+type Locale = 'en' | 'ru' | 'uz' | 'ar';
 
 type ExportStockInput = {
   companyId: string;
-  from: string; // YYYY-MM-DD
-  to: string;   // YYYY-MM-DD
+  from: string;
+  to: string;
   baseCurrency: string;
   stockMode: StockMode;
+  locale?: string;
 };
 
 type Agg = {
@@ -26,14 +29,116 @@ type Agg = {
   incomingBefore: number;
   incomingRange: number;
   incomingAll: number;
-
   soldBefore: number;
   soldRange: number;
   soldAll: number;
-
   revenueRangeBaseMinor: number;
   profitRangeBaseMinor: number;
 };
+
+const TRANSLATIONS: Record<string, Record<string, string>> = {
+    en: {
+        sheet_summary: "Stock Summary",
+        sheet_demand: "Demand",
+        sheet_daily: "Sales by Day",
+        title_summary: "Inventory Stock Report",
+        title_demand: "Top Demanding Products",
+        title_daily: "Sales Performance by Day",
+        info_mode: "Mode:",
+        info_currency: "Base Currency:",
+        info_period: "Period:",
+        h_prod_code: "Product Code",
+        h_prod_name: "Product Name",
+        h_opening: "Opening Qty",
+        h_incoming: "Incoming Qty",
+        h_sold: "Sold Qty",
+        h_remaining: "Remaining Qty",
+        h_origin_price: "Price (Origin)",
+        h_revenue: "Revenue (Base)",
+        h_profit: "Gross Profit (Base)",
+        h_profit_pct: "Gross Profit %",
+        h_avg_price: "Avg Sell Price",
+        h_date: "Date",
+        h_units_sold: "Units Sold",
+    },
+    ru: {
+        sheet_summary: "Сводка по складу",
+        sheet_demand: "Спрос",
+        sheet_daily: "Продажи по дням",
+        title_summary: "Отчет по складу",
+        title_demand: "Самые востребованные товары",
+        title_daily: "Динамика продаж по дням",
+        info_mode: "Режим:",
+        info_currency: "Базовая валюта:",
+        info_period: "Период:",
+        h_prod_code: "Код товара",
+        h_prod_name: "Название товара",
+        h_opening: "Начальный остаток",
+        h_incoming: "Поступления",
+        h_sold: "Продано",
+        h_remaining: "Конечный остаток",
+        h_origin_price: "Себестоимость",
+        h_revenue: "Выручка (баз.)",
+        h_profit: "Валовая прибыль (баз.)",
+        h_profit_pct: "Валовая прибыль %",
+        h_avg_price: "Средняя цена продажи",
+        h_date: "Дата",
+        h_units_sold: "Продано (шт.)",
+    },
+    uz: {
+        sheet_summary: "Omborxona xulosasi",
+        sheet_demand: "Talab",
+        sheet_daily: "Kunlik sotuvlar",
+        title_summary: "Omborxona hisoboti",
+        title_demand: "Eng talabgir mahsulotlar",
+        title_daily: "Kunlar bo'yicha sotuvlar dinamikasi",
+        info_mode: "Rejim:",
+        info_currency: "Asosiy valyuta:",
+        info_period: "Davr:",
+        h_prod_code: "Mahsulot kodi",
+        h_prod_name: "Mahsulot nomi",
+        h_opening: "Boshlang'ich qoldiq",
+        h_incoming: "Kirim",
+        h_sold: "Sotilgan",
+        h_remaining: "Yakuniy qoldiq",
+        h_origin_price: "Tannarx",
+        h_revenue: "Tushum (asosiy)",
+        h_profit: "Yalpi foyda (asosiy)",
+        h_profit_pct: "Yalpi foyda %",
+        h_avg_price: "O'rtacha sotish narxi",
+        h_date: "Sana",
+        h_units_sold: "Sotilgan (dona)",
+    },
+    ar: {
+        sheet_summary: "ملخص المخزون",
+        sheet_demand: "الطلب",
+        sheet_daily: "المبيعات اليومية",
+        title_summary: "تقرير المخزون",
+        title_demand: "المنتجات الأكثر طلباً",
+        title_daily: "أداء المبيعات اليومي",
+        info_mode: "الوضع:",
+        info_currency: "العملة الأساسية:",
+        info_period: "الفترة:",
+        h_prod_code: "رمز المنتج",
+        h_prod_name: "اسم المنتج",
+        h_opening: "الكمية الافتتاحية",
+        h_incoming: "الكمية الواردة",
+        h_sold: "الكمية المباعة",
+        h_remaining: "الكمية المتبقية",
+        h_origin_price: "سعر التكلفة",
+        h_revenue: "الإيرادات (أساسي)",
+        h_profit: "إجمالي الربح (أساسي)",
+        h_profit_pct: "نسبة إجمالي الربح",
+        h_avg_price: "متوسط سعر البيع",
+        h_date: "التاريخ",
+        h_units_sold: "الوحدات المباعة",
+    }
+};
+
+function t(locale: string | undefined, key: string): string {
+    const lang = TRANSLATIONS[locale || 'en'] || TRANSLATIONS.en;
+    return lang[key] || TRANSLATIONS.en[key] || key;
+}
 
 function anyToMillis(v: any): number | null {
   if (!v) return null;
@@ -60,6 +165,7 @@ function anyToISODate(v: any): string {
 export async function exportStockReportExcel(input: ExportStockInput): Promise<Buffer> {
   const db = admin.firestore();
   const range = makeDateRange(input.from, input.to);
+  const locale = input.locale || 'en';
 
   const agg = new Map<string, Agg>();
 
@@ -67,66 +173,44 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     if (!agg.has(code)) {
       agg.set(code, {
         productCode: code,
-        incomingBefore: 0,
-        incomingRange: 0,
-        incomingAll: 0,
-        soldBefore: 0,
-        soldRange: 0,
-        soldAll: 0,
-        revenueRangeBaseMinor: 0,
-        profitRangeBaseMinor: 0,
+        incomingBefore: 0, incomingRange: 0, incomingAll: 0,
+        soldBefore: 0, soldRange: 0, soldAll: 0,
+        revenueRangeBaseMinor: 0, profitRangeBaseMinor: 0,
       });
     }
     return agg.get(code)!;
   }
 
-  // --- Incoming: ALL (for asOfToday)
-  const incAllSnap = await db.collection("companies").doc(input.companyId).collection("incomingProducts")
-    .get();
-
+  const incAllSnap = await db.collection("companies").doc(input.companyId).collection("incomingProducts").get();
   for (const d of incAllSnap.docs) {
     const x = d.data();
     const code = String(x.productCode ?? "");
     if (!code) continue;
-
     const q = Number(x.quantity ?? 0);
     get(code).incomingAll += q;
-
-    const dt = x.incomeDate ?? x.date;
-    const ms = anyToMillis(dt);
+    const ms = anyToMillis(x.incomeDate ?? x.date);
     if (ms != null) {
       if (ms < range.from.getTime()) get(code).incomingBefore += q;
-      if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
-        get(code).incomingRange += q;
-      }
+      if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) get(code).incomingRange += q;
     }
   }
 
-  // --- Sales: ALL (for asOfToday)
-  const salesAllSnap = await db.collection("companies").doc(input.companyId).collection("sales")
-    .get();
-
+  const salesAllSnap = await db.collection("companies").doc(input.companyId).collection("sales").get();
   const salesByDay = new Map<string, { units: number; revenueMinor: number; profitMinor: number }>();
-
   for (const d of salesAllSnap.docs) {
     const s = d.data();
     const code = String(s.productCode ?? "");
     if (!code) continue;
-
     const q = Number(s.quantity ?? 0);
     get(code).soldAll += q;
-
-    const dt = s.date;
-    const ms = anyToMillis(dt);
+    const ms = anyToMillis(s.date);
     if (ms != null) {
       if (ms < range.from.getTime()) get(code).soldBefore += q;
-
       if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
         get(code).soldRange += q;
         get(code).revenueRangeBaseMinor += Number(s.revenueBaseMinor ?? 0);
         get(code).profitRangeBaseMinor += Number(s.grossProfitBaseMinor ?? 0);
-
-        const day = anyToISODate(dt);
+        const day = anyToISODate(s.date);
         if (!salesByDay.has(day)) salesByDay.set(day, { units: 0, revenueMinor: 0, profitMinor: 0 });
         const bucket = salesByDay.get(day)!;
         bucket.units += q;
@@ -135,156 +219,143 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
       }
     }
   }
-
-  // Optional: product names
-  const productNameByCode = new Map<string, string>();
+  
+  const productsByCode = new Map<string, Product>();
   try {
-    const prodSnap = await db.collection("companies").doc(input.companyId).collection("products")
-      .get();
+    const prodSnap = await db.collection("companies").doc(input.companyId).collection("products").get();
     for (const d of prodSnap.docs) {
-      const p = d.data();
-      const code = String(p.productCode ?? p.code ?? p.sku ?? "");
-      if (!code) continue;
-      productNameByCode.set(code, p.productName ?? p.name ?? "");
+        const p = d.data() as Product;
+        const code = String(p.productCode ?? p.id ?? "");
+        if (code) productsByCode.set(code, p);
     }
-  } catch {
-    // ignore
-  }
-
+  } catch { /* ignore */ }
+  
   const rows = Array.from(agg.values()).map(a => {
     const opening = a.incomingBefore - a.soldBefore;
     const closing = opening + a.incomingRange - a.soldRange;
     const onHandToday = a.incomingAll - a.soldAll;
+    const remainingQty = input.stockMode === "range" ? closing : onHandToday;
+
+    const productDoc: any = productsByCode.get(a.productCode);
+    let priceOrigin: number | string = "";
+    if (productDoc) {
+      const p: any = productDoc;
+      const purchasePriceMinor = p.purchasePriceMinor ?? p.costMinor ?? p.avgCostMinor ?? p.averageCostMinor;
+      if (typeof purchasePriceMinor === 'number') {
+          priceOrigin = fromMinor(purchasePriceMinor, (p.purchasePriceCurrency || input.baseCurrency));
+      } else {
+          const purchasePriceMajor = p.purchasePrice ?? p.cost ?? p.avgCost ?? p.averageCost;
+          if (typeof purchasePriceMajor === 'number') priceOrigin = purchasePriceMajor;
+      }
+    }
+    if (priceOrigin === "" && a.soldRange > 0 && a.revenueRangeBaseMinor > 0) {
+        const costOfGoodsSold = a.revenueRangeBaseMinor - a.profitRangeBaseMinor;
+        priceOrigin = (costOfGoodsSold / 100) / a.soldRange;
+    }
+
     return {
       code: a.productCode,
-      name: productNameByCode.get(a.productCode) ?? "",
+      name: productDoc?.name ?? "",
       opening,
       incoming: a.incomingRange,
       sold: a.soldRange,
-      closing,
-      onHandToday,
-      revenue: a.revenueRangeBaseMinor,
-      profit: a.profitRangeBaseMinor,
+      remainingQty,
+      priceOrigin,
+      revenue: a.revenueRangeBaseMinor / 100,
+      profit: a.profitRangeBaseMinor / 100,
     };
   });
 
-  const demand = [...rows].sort((a, b) => (b.sold - a.sold));
-
-  const daily = Array.from(salesByDay.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([day, v]) => ({ day, ...v }));
-
   const wb = new ExcelJS.Workbook();
   applyGlobalWorkbookStyle(wb);
+  const isRTL = locale === 'ar';
 
   // ===== Sheet 1: Stock Summary
-  const ws = wb.addWorksheet("Stock Summary");
+  const ws = wb.addWorksheet(t(locale, 'sheet_summary'));
+  if (isRTL) ws.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws);
-
-  ws.getColumn("A").width = 2;
-  ws.getColumn("B").width = 16;
-  ws.getColumn("C").width = 26;
-  ws.getColumn("D").width = 12;
-  ws.getColumn("E").width = 12;
-  ws.getColumn("F").width = 12;
-  ws.getColumn("G").width = 12;
-  ws.getColumn("H").width = 14;
-  ws.getColumn("I").width = 16;
-  ws.getColumn("J").width = 16;
-
-  styleTitle(ws, "FlowVia Business Solutions", "Inventory Stock Report");
-  styleInfoRow(ws, 5, "Mode:", input.stockMode);
-  styleInfoRow(ws, 6, "Base Currency:", input.baseCurrency);
-  styleInfoRow(ws, 7, "Period:", `From ${input.from} to ${input.to}`);
-
-  const headerRow = 12;
-  ws.getRow(headerRow).values = [
-    "",
-    "Product Code",
-    "Product Name",
-    "Opening Qty",
-    "Incoming Qty",
-    "Sold Qty",
-    "Closing Qty",
-    "On Hand Today",
-    "Revenue (Base)",
-    "Gross Profit (Base)",
+  ws.columns = [
+      { width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 13 },
+      { width: 13 }, { width: 16 }, { width: 13 }, { width: 16 }, { width: 13 },
   ];
-  styleTableHeader(ws, headerRow, 2, 10);
+  styleTitle(ws, t(locale, 'company'), t(locale, 'title_summary'));
+  if (isRTL) { ws.getCell('B2').alignment = { horizontal: 'right' }; ws.getCell('B3').alignment = { horizontal: 'right' }; }
+  styleInfoRow(ws, 5, t(locale, 'info_mode'), input.stockMode);
+  styleInfoRow(ws, 6, t(locale, 'info_currency'), input.baseCurrency);
+  styleInfoRow(ws, 7, t(locale, 'info_period'), `From ${input.from} to ${input.to}`);
+  if (isRTL) { ws.getCell('B5').alignment = { horizontal: 'right' }; ws.getCell('B6').alignment = { horizontal: 'right' }; ws.getCell('B7').alignment = { horizontal: 'right' }; }
 
-  let r = headerRow + 1;
+  const hr1 = 12;
+  ws.getRow(hr1).values = ["", t(locale, 'h_prod_code'), t(locale, 'h_prod_name'), t(locale, 'h_opening'), t(locale, 'h_incoming'), t(locale, 'h_sold'), t(locale, 'h_remaining'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit')];
+  styleTableHeader(ws, hr1, 2, 10);
+  let r1 = hr1 + 1;
   for (const x of rows) {
-    ws.getRow(r).values = [
-      "",
-      x.code,
-      x.name,
-      input.stockMode === "asOfToday" ? "" : x.opening,
-      input.stockMode === "asOfToday" ? "" : x.incoming,
-      input.stockMode === "asOfToday" ? "" : x.sold,
-      input.stockMode === "asOfToday" ? "" : x.closing,
-      input.stockMode === "range" ? "" : x.onHandToday,
-      x.revenue / 100,
-      x.profit / 100,
-    ];
-    styleTableBodyRow(ws, r, 2, 10);
-    ws.getRow(r).getCell(9).numFmt = "#,##0.00";
-    ws.getRow(r).getCell(10).numFmt = "#,##0.00";
-    r++;
+    ws.getRow(r1).values = ["", x.code, x.name, input.stockMode === "asOfToday" ? "" : x.opening, input.stockMode === "asOfToday" ? "" : x.incoming, input.stockMode === "asOfToday" ? "" : x.sold, x.remainingQty, x.priceOrigin, x.revenue, x.profit];
+    styleTableBodyRow(ws, r1, 2, 10);
+    ws.getRow(r1).getCell(4).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(5).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(6).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(7).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(8).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(9).numFmt = "#,##0.00";
+    ws.getRow(r1).getCell(10).numFmt = "#,##0.00";
+    r1++;
   }
 
   // ===== Sheet 2: Demand
-  const ws2 = wb.addWorksheet("Demand");
+  const ws2 = wb.addWorksheet(t(locale, 'sheet_demand'));
+  if (isRTL) ws2.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws2);
-
-  ws2.getColumn("A").width = 2;
-  ws2.getColumn("B").width = 16;
-  ws2.getColumn("C").width = 26;
-  ws2.getColumn("D").width = 12;
-  ws2.getColumn("E").width = 16;
-  ws2.getColumn("F").width = 16;
-  ws2.getColumn("G").width = 16;
-
-  styleTitle(ws2, "FlowVia Business Solutions", "Top Demanding Products");
-  styleInfoRow(ws2, 5, "Period:", `From ${input.from} to ${input.to}`);
+  ws2.columns = [{ width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 16 }, { width: 23.4 }, { width: 18.3 }, { width: 16 }];
+  styleTitle(ws2, t(locale, 'company'), t(locale, 'title_demand'));
+  if (isRTL) { ws2.getCell('B2').alignment = { horizontal: 'right' }; ws2.getCell('B3').alignment = { horizontal: 'right' }; }
+  styleInfoRow(ws2, 5, t(locale, 'info_period'), `From ${input.from} to ${input.to}`);
+  if (isRTL) { ws2.getCell('B5').alignment = { horizontal: 'right' }; }
 
   const hr2 = 12;
-  ws2.getRow(hr2).values = ["", "Product Code", "Product Name", "Units Sold", "Revenue (Base)", "Gross Profit (Base)", "Avg Sell Price"];
-  styleTableHeader(ws2, hr2, 2, 7);
-
-  let rr = hr2 + 1;
+  ws2.getRow(hr2).values = ["", t(locale, 'h_prod_code'), t(locale, 'h_prod_name'), t(locale, 'h_units_sold'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct'), t(locale, 'h_avg_price')];
+  styleTableHeader(ws2, hr2, 2, 8);
+  let r2 = hr2 + 1;
+  const demand = [...rows].sort((a, b) => (b.sold - a.sold));
   for (const x of demand) {
-    const avg = x.sold > 0 ? (x.revenue / 100) / x.sold : 0;
-    ws2.getRow(rr).values = ["", x.code, x.name, x.sold, x.revenue / 100, x.profit / 100, avg];
-    styleTableBodyRow(ws2, rr, 2, 7);
-    ws2.getRow(rr).getCell(5).numFmt = "#,##0.00";
-    ws2.getRow(rr).getCell(6).numFmt = "#,##0.00";
-    ws2.getRow(rr).getCell(7).numFmt = "#,##0.00";
-    rr++;
+    const gpPct = x.revenue > 0 ? x.profit / x.revenue : 0;
+    const avgSellPrice = x.sold > 0 ? x.revenue / x.sold : 0;
+    ws2.getRow(r2).values = ["", x.code, x.name, x.sold, x.revenue, x.profit, gpPct, avgSellPrice];
+    styleTableBodyRow(ws2, r2, 2, 8);
+    ws2.getRow(r2).getCell(5).numFmt = "#,##0.00";
+    ws2.getRow(r2).getCell(6).numFmt = "#,##0.00";
+    ws2.getRow(r2).getCell(7).numFmt = "0.00%";
+    ws2.getRow(r2).getCell(8).numFmt = "#,##0.00";
+    r2++;
   }
 
   // ===== Sheet 3: Sales by Day
-  const ws3 = wb.addWorksheet("Sales by Day");
+  const ws3 = wb.addWorksheet(t(locale, 'sheet_daily'));
+  if (isRTL) ws3.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws3);
-
-  ws3.getColumn("A").width = 2;
-  ws3.getColumn("B").width = 14;
-  ws3.getColumn("C").width = 12;
-  ws3.getColumn("D").width = 16;
-  ws3.getColumn("E").width = 16;
-
-  styleTitle(ws3, "FlowVia Business Solutions", "Sales Performance by Day");
-  styleInfoRow(ws3, 5, "Period:", `From ${input.from} to ${input.to}`);
+  ws3.columns = [{ width: 2 }, { width: 14 }, { width: 12 }, { width: 22 }, { width: 16 }, { width: 23.1 }, { width: 19.4 }];
+  styleTitle(ws3, t(locale, 'company'), t(locale, 'title_daily'));
+  if (isRTL) { ws3.getCell('B2').alignment = { horizontal: 'right' }; ws3.getCell('B3').alignment = { horizontal: 'right' }; }
+  styleInfoRow(ws3, 5, t(locale, 'info_period'), `From ${input.from} to ${input.to}`);
+  if (isRTL) { ws3.getCell('B5').alignment = { horizontal: 'right' }; }
 
   const hr3 = 12;
-  ws3.getRow(hr3).values = ["", "Date", "Units Sold", "Revenue (Base)", "Gross Profit (Base)"];
-  styleTableHeader(ws3, hr3, 2, 5);
-
+  ws3.getRow(hr3).values = ["", t(locale, 'h_date'), t(locale, 'h_units_sold'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct')];
+  styleTableHeader(ws3, hr3, 2, 7);
   let r3 = hr3 + 1;
+  const daily = Array.from(salesByDay.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([day, v]) => ({ day, ...v }));
   for (const d of daily) {
-    ws3.getRow(r3).values = ["", d.day, d.units, d.revenueMinor / 100, d.profitMinor / 100];
-    styleTableBodyRow(ws3, r3, 2, 5);
+    const units = d.units;
+    const revenue = d.revenueMinor / 100;
+    const profit = d.profitMinor / 100;
+    const costPerUnit = units > 0 ? (revenue - profit) / units : 0;
+    const gpPct = revenue > 0 ? profit / revenue : 0;
+    ws3.getRow(r3).values = ["", d.day, units, costPerUnit, revenue, profit, gpPct];
+    styleTableBodyRow(ws3, r3, 2, 7);
     ws3.getRow(r3).getCell(4).numFmt = "#,##0.00";
     ws3.getRow(r3).getCell(5).numFmt = "#,##0.00";
+    ws3.getRow(r3).getCell(6).numFmt = "#,##0.00";
+    ws3.getRow(r3).getCell(7).numFmt = "0.00%";
     r3++;
   }
 

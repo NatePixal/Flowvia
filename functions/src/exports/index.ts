@@ -85,7 +85,8 @@ export const exportStatement = functions
                 from: dateFrom,
                 to: dateTo,
                 baseCurrency,
-                stockMode
+                stockMode,
+                locale, // ✅ pass locale through
             });
             
             return {
