@@ -9,7 +9,7 @@ import {
   styleTableHeader,
   styleTableBodyRow,
 } from "./exportUtils";
-import { fromMinor } from "./money";
+import { minorToMajor } from "./money";
 import type { Product } from "../types";
 
 type StockMode = "range" | "asOfToday" | "both";
@@ -242,7 +242,7 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
       const p: any = productDoc;
       const purchasePriceMinor = p.purchasePriceMinor ?? p.costMinor ?? p.avgCostMinor ?? p.averageCostMinor;
       if (typeof purchasePriceMinor === 'number') {
-          priceOrigin = fromMinor(purchasePriceMinor, (p.purchasePriceCurrency || input.baseCurrency));
+          priceOrigin = minorToMajor(purchasePriceMinor, (p.purchasePriceCurrency || input.baseCurrency));
       } else {
           const purchasePriceMajor = p.purchasePrice ?? p.cost ?? p.avgCost ?? p.averageCost;
           if (typeof purchasePriceMajor === 'number') priceOrigin = purchasePriceMajor;

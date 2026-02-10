@@ -14,6 +14,7 @@ function toDate(v) {
     return isNaN(d.getTime()) ? null : d;
 }
 async function buildProductMovementStatement(params) {
+    var _a, _b, _c, _d;
     const { companyId, productId, from, to } = params;
     // 1) Load product to get productCode
     const productRef = admin_1.db.doc(`companies/${companyId}/products/${productId}`);
@@ -89,6 +90,14 @@ async function buildProductMovementStatement(params) {
             debitBase: qtyIn,
             creditBase: qtyOut,
             runningBase: runningQty,
+            meta: {
+                productCode,
+                productName,
+                category: productData.category || productData.catagory || '',
+                currency: productData.purchasePriceCurrency || '',
+                purchasePrice: (_b = (_a = productData.purchasePrice) !== null && _a !== void 0 ? _a : productData.buyPrice) !== null && _b !== void 0 ? _b : null,
+                sellingPrice: (_d = (_c = productData.sellingPrice) !== null && _c !== void 0 ? _c : productData.sellPrice) !== null && _d !== void 0 ? _d : null,
+            }
         });
     }
     const summary = {

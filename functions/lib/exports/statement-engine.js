@@ -1,196 +1,239 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildStatementWorkbook = buildStatementWorkbook;
-// functions/src/exports/statement-engine.ts
+// File: functions/src/exports/statement-engine.ts
 const ExcelJS = require("exceljs");
 const money_1 = require("./money");
-// --- 1. LOCAL, EXCEL-ONLY TRANSLATIONS ---
+const exportUtils_1 = require("./exportUtils");
 const TRANSLATIONS = {
     en: {
-        businessDate: "Business Date",
-        description: "Description",
-        type: "Type",
-        currency: "Currency",
-        debitOrig: "Debit (Orig)",
-        creditOrig: "Credit (Orig)",
-        runningBase: "Running Bal ({baseCurrency})",
-        reference: "Reference",
-        fxStatus: "FX Status",
-        reportTitle: "Report",
-        period: "Period",
-        baseCurrency: "Base Currency",
-        noData: "No data available for the selected period.",
-        clientTitle: "Client Statement",
-        supplierTitle: "Supplier Statement",
-        expensesTitle: "Expense Statement",
-        productMovementTitle: "Product Movement",
-        stockReportTitle: "Inventory Stock Report",
-        category: "Category",
-        amount: "Amount",
-        fxPair: "FX Pair",
-        fxRate: "FX Rate",
-        amountBase: "Amount ({baseCurrency})",
-        paidTo: "Paid To",
-        employee: "Employee",
-        createdBy: "Created By",
-        qtyIn: "Qty In",
-        qtyOut: "Qty Out",
-        runningQty: "Running Qty",
+        company: 'FlowVia Business Solutions',
+        // keep template spelling to match
+        expenses: 'Expenses',
+        clientStatment: 'Client Statment',
+        supplierStatment: 'Supplier Statment',
+        productStatment: 'Product Statment',
+        dateRange: 'Date Range from {from} to {to}',
+        name: 'Name',
+        balance: 'Balance',
+        status: 'Status',
+        hasLoan: 'Has Loan',
+        overpaid: 'Overpaid',
+        settled: 'Settled',
+        payable: 'Payable',
+        clientLedger: 'Client Ledger',
+        supplierLedger: 'Supplier Ledger',
+        amountPaid: 'Amount Paid',
+        h_date: 'Date',
+        h_description: 'Description',
+        h_expenseType: 'Expense type',
+        h_price: 'Price',
+        h_currency: 'Currency',
+        h_exchangeRate: 'Exchange Rate',
+        h_productBought: 'Product Bought',
+        h_qty: 'QTY',
+        h_soldPrice: 'Sold Price',
+        h_contractAmount: 'Contract Amount',
+        h_paidDate: 'Paid Date',
+        h_paid: 'Paid',
+        h_priceOrigin: 'Price Origin',
+        h_productCode: 'Product Code',
+        h_category: 'Catagory',
+        h_balanceWas: 'Balance from choosen date "Was"',
+        h_qtyLeft: 'QTY Left',
+        h_sellingPrice: 'Selling Price',
+        h_profit: 'Profit',
+        h_remainingValue: 'Price of All Remaining Product',
+        noData: 'No data available for the selected period.',
+        // Summary sheet labels
+        sum_entity: 'Entity',
+        sum_period: 'Period',
+        sum_base: 'Base Currency',
+        sum_opening: 'Opening',
+        sum_totalDebit: 'Total Debit',
+        sum_totalCredit: 'Total Credit',
+        sum_closing: 'Closing',
+        sum_warnings: 'Warnings',
+        sum_totalsByCur: 'Totals by currency (original)',
+        sum_currency: 'Currency',
+        sum_debit: 'Debit',
+        sum_credit: 'Credit',
+        sum_exportVer: 'Export version: {v}',
+        dash: '—',
     },
     ru: {
-        businessDate: "Рабочая дата",
-        description: "Описание",
-        type: "Тип",
-        currency: "Валюта",
-        debitOrig: "Дебет (ориг.)",
-        creditOrig: "Кредит (ориг.)",
-        runningBase: "Остаток ({baseCurrency})",
-        reference: "Ссылка",
-        fxStatus: "Статус FX",
-        reportTitle: "Отчет",
-        period: "Период",
-        baseCurrency: "Базовая валюта",
-        noData: "Нет данных за выбранный период.",
-        clientTitle: "Выписка по клиенту",
-        supplierTitle: "Выписка по поставщику",
-        expensesTitle: "Отчет о расходах",
-        productMovementTitle: "Движение товара",
-        stockReportTitle: "Отчет по складу",
-        category: "Категория",
-        amount: "Сумма",
-        fxPair: "Валютная пара",
-        fxRate: "Курс",
-        amountBase: "Сумма ({baseCurrency})",
-        paidTo: "Получатель",
-        employee: "Сотрудник",
-        createdBy: "Создал",
-        qtyIn: "Кол-во (приход)",
-        qtyOut: "Кол-во (расход)",
-        runningQty: "Остаток (кол-во)",
+        company: 'FlowVia Business Solutions',
+        expenses: 'Расходы',
+        clientStatment: 'Отчет клиента',
+        supplierStatment: 'Отчет поставщика',
+        productStatment: 'Отчет по продукту',
+        dateRange: 'Диапазон дат: {from} — {to}',
+        name: 'Имя',
+        balance: 'Баланс',
+        status: 'Статус',
+        hasLoan: 'Есть долг',
+        overpaid: 'Переплата',
+        settled: 'Закрыто',
+        payable: 'К оплате',
+        clientLedger: 'Леджер клиента',
+        supplierLedger: 'Леджер поставщика',
+        amountPaid: 'Оплачено',
+        h_date: 'Дата',
+        h_description: 'Описание',
+        h_expenseType: 'Тип расхода',
+        h_price: 'Сумма',
+        h_currency: 'Валюта',
+        h_exchangeRate: 'Курс',
+        h_productBought: 'Товар',
+        h_qty: 'Кол-во',
+        h_soldPrice: 'Цена продажи',
+        h_contractAmount: 'Сумма договора',
+        h_paidDate: 'Дата оплаты',
+        h_paid: 'Оплачено',
+        h_priceOrigin: 'Цена закупки',
+        h_productCode: 'Код товара',
+        h_category: 'Категория',
+        h_balanceWas: 'Остаток на дату',
+        h_qtyLeft: 'Остаток (кол-во)',
+        h_sellingPrice: 'Цена продажи',
+        h_profit: 'Прибыль',
+        h_remainingValue: 'Стоимость остатка',
+        noData: 'Нет данных за выбранный период.',
+        sum_entity: 'Сущность',
+        sum_period: 'Период',
+        sum_base: 'Базовая валюта',
+        sum_opening: 'Открытие',
+        sum_totalDebit: 'Дебет всего',
+        sum_totalCredit: 'Кредит всего',
+        sum_closing: 'Закрытие',
+        sum_warnings: 'Предупреждения',
+        sum_totalsByCur: 'Итоги по валютам (ориг.)',
+        sum_currency: 'Валюта',
+        sum_debit: 'Дебет',
+        sum_credit: 'Кредит',
+        sum_exportVer: 'Версия экспорта: {v}',
+        dash: '—',
     },
     uz: {
-        businessDate: "Ish kuni",
-        description: "Tavsif",
-        type: "Turi",
-        currency: "Valyuta",
-        debitOrig: "Debet (asl)",
-        creditOrig: "Kredit (asl)",
-        runningBase: "Qoldiq ({baseCurrency})",
-        reference: "Manba",
-        fxStatus: "Valyuta holati",
-        reportTitle: "Hisobot",
-        period: "Davr",
-        baseCurrency: "Asosiy valyuta",
-        noData: "Tanlangan davr uchun ma'lumotlar mavjud emas.",
-        clientTitle: "Mijoz hisoboti",
-        supplierTitle: "Yetkazib beruvchi hisoboti",
-        expensesTitle: "Xarajatlar hisoboti",
-        productMovementTitle: "Mahsulot harakati",
-        stockReportTitle: "Ombor hisoboti",
-        category: "Kategoriya",
-        amount: "Summa",
-        fxPair: "Valyuta juftligi",
-        fxRate: "Kurs",
-        amountBase: "Summa ({baseCurrency})",
-        paidTo: "To'lovchi",
-        employee: "Xodim",
-        createdBy: "Yaratdi",
-        qtyIn: "Miqdor (kirim)",
-        qtyOut: "Miqdor (chiqim)",
-        runningQty: "Qoldiq (miqdor)",
+        company: 'FlowVia Business Solutions',
+        expenses: 'Xarajatlar',
+        clientStatment: 'Mijoz hisoboti',
+        supplierStatment: 'Yetkazib beruvchi hisoboti',
+        productStatment: 'Mahsulot hisoboti',
+        dateRange: 'Sana oralig‘i: {from} — {to}',
+        name: 'Nomi',
+        balance: 'Balans',
+        status: 'Holati',
+        hasLoan: 'Qarz bor',
+        overpaid: 'Ortiqcha to‘lov',
+        settled: 'Yopilgan',
+        payable: 'To‘lanadi',
+        clientLedger: 'Mijoz ledjeri',
+        supplierLedger: 'Yetkazib beruvchi ledjeri',
+        amountPaid: 'To‘langan',
+        h_date: 'Sana',
+        h_description: 'Tavsif',
+        h_expenseType: 'Xarajat turi',
+        h_price: 'Summa',
+        h_currency: 'Valyuta',
+        h_exchangeRate: 'Kurs',
+        h_productBought: 'Olingan mahsulot',
+        h_qty: 'Miqdor',
+        h_soldPrice: 'Sotuv narxi',
+        h_contractAmount: 'Shartnoma summasi',
+        h_paidDate: 'To‘lov sanasi',
+        h_paid: 'To‘langan',
+        h_priceOrigin: 'Asl narx',
+        h_productCode: 'Mahsulot kodi',
+        h_category: 'Kategoriya',
+        h_balanceWas: 'Boshlang‘ich qoldiq',
+        h_qtyLeft: 'Qolgan miqdor',
+        h_sellingPrice: 'Sotuv narxi',
+        h_profit: 'Foyda',
+        h_remainingValue: 'Qolgan mahsulot qiymati',
+        noData: 'Tanlangan davr uchun ma’lumot yo‘q.',
+        sum_entity: 'Subyekt',
+        sum_period: 'Davr',
+        sum_base: 'Asosiy valyuta',
+        sum_opening: 'Boshlanish',
+        sum_totalDebit: 'Jami debet',
+        sum_totalCredit: 'Jami kredit',
+        sum_closing: 'Yakun',
+        sum_warnings: 'Ogohlantirishlar',
+        sum_totalsByCur: 'Valyutalar bo‘yicha (asl)',
+        sum_currency: 'Valyuta',
+        sum_debit: 'Debet',
+        sum_credit: 'Kredit',
+        sum_exportVer: 'Eksport versiyasi: {v}',
+        dash: '—',
     },
     ar: {
-        businessDate: "تاريخ العمل",
-        description: "الوصف",
-        type: "النوع",
-        currency: "العملة",
-        debitOrig: "مدين (أصلي)",
-        creditOrig: "دائن (أصلي)",
-        runningBase: "الرصيد الجاري ({baseCurrency})",
-        reference: "مرجع",
-        fxStatus: "حالة الصرف",
-        reportTitle: "تقرير",
-        period: "فترة",
-        baseCurrency: "العملة الأساسية",
-        noData: "لا توجد بيانات متاحة للفترة المحددة.",
-        clientTitle: "كشف حساب العميل",
-        supplierTitle: "كشف حساب المورد",
-        expensesTitle: "تقرير المصروفات",
-        productMovementTitle: "حركة المنتج",
-        stockReportTitle: "تقرير المخزون",
-        category: "الفئة",
-        amount: "المبلغ",
-        fxPair: "زوج العملات",
-        fxRate: "سعر الصرف",
-        amountBase: "المبلغ ({baseCurrency})",
-        paidTo: "دفع لـ",
-        employee: "الموظف",
-        createdBy: "تم إنشاؤه بواسطة",
-        qtyIn: "الكمية الواردة",
-        qtyOut: "الكمية الصادرة",
-        runningQty: "الكمية المتبقية",
+        company: 'FlowVia Business Solutions',
+        expenses: 'المصروفات',
+        clientStatment: 'كشف حساب العميل',
+        supplierStatment: 'كشف حساب المورد',
+        productStatment: 'كشف المنتج',
+        dateRange: 'الفترة: {from} — {to}',
+        name: 'الاسم',
+        balance: 'الرصيد',
+        status: 'الحالة',
+        hasLoan: 'عليه مديونية',
+        overpaid: 'دفعة زائدة',
+        settled: 'مُسوى',
+        payable: 'مستحق الدفع',
+        clientLedger: 'دفتر العميل',
+        supplierLedger: 'دفتر المورد',
+        amountPaid: 'المدفوع',
+        h_date: 'التاريخ',
+        h_description: 'الوصف',
+        h_expenseType: 'نوع المصروف',
+        h_price: 'المبلغ',
+        h_currency: 'العملة',
+        h_exchangeRate: 'سعر الصرف',
+        h_productBought: 'المنتج',
+        h_qty: 'الكمية',
+        h_soldPrice: 'سعر البيع',
+        h_contractAmount: 'قيمة العقد',
+        h_paidDate: 'تاريخ الدفع',
+        h_paid: 'مدفوع',
+        h_priceOrigin: 'سعر الشراء',
+        h_productCode: 'كود المنتج',
+        h_category: 'الفئة',
+        h_balanceWas: 'الرصيد عند البداية',
+        h_qtyLeft: 'المتبقي',
+        h_sellingPrice: 'سعر البيع',
+        h_profit: 'الربح',
+        h_remainingValue: 'قيمة المتبقي',
+        noData: 'لا توجد بيانات للفترة المحددة.',
+        sum_entity: 'الجهة',
+        sum_period: 'الفترة',
+        sum_base: 'العملة الأساسية',
+        sum_opening: 'الرصيد الافتتاحي',
+        sum_totalDebit: 'إجمالي المدين',
+        sum_totalCredit: 'إجمالي الدائن',
+        sum_closing: 'الرصيد الختامي',
+        sum_warnings: 'تنبيهات',
+        sum_totalsByCur: 'الإجماليات حسب العملة (أصلي)',
+        sum_currency: 'العملة',
+        sum_debit: 'مدين',
+        sum_credit: 'دائن',
+        sum_exportVer: 'إصدار التصدير: {v}',
+        dash: '—',
     },
 };
 function t(locale, key, params) {
-    const lang = TRANSLATIONS[locale] || TRANSLATIONS.en;
-    let text = lang[key] || TRANSLATIONS.en[key] || key;
-    if (params) {
-        for (const [k, v] of Object.entries(params)) {
-            text = text.replace(`{${k}}`, v);
-        }
-    }
-    return text;
+    var _a, _b;
+    const lang = TRANSLATIONS[locale || 'en'] || TRANSLATIONS.en;
+    let s = (_b = (_a = lang[key]) !== null && _a !== void 0 ? _a : TRANSLATIONS.en[key]) !== null && _b !== void 0 ? _b : key;
+    if (params)
+        for (const [k, v] of Object.entries(params))
+            s = s.replaceAll(`{${k}}`, v);
+    return s;
 }
-function statementTitle(locale, statementType) {
-    const key = `${statementType}Title`;
-    return t(locale, key, {});
+function iso(d) {
+    return d.toISOString().slice(0, 10);
 }
-function getLocalizedColumns(locale, baseCurrency, statementType) {
-    const commonLedgerCols = [
-        { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
-        { headerKey: "description", dataKey: "description", width: 40, kind: "text", align: "left" },
-        { headerKey: "type", dataKey: "type", width: 14, kind: "text", align: "left" },
-        { headerKey: "currency", dataKey: "currency", width: 10, kind: "text", align: "center" },
-        { headerKey: "debitOrig", dataKey: "debitOrig", width: 16, kind: "moneyOrig", align: "right" },
-        { headerKey: "creditOrig", dataKey: "creditOrig", width: 16, kind: "moneyOrig", align: "right" },
-        { headerKey: "runningBase", dataKey: "runningBase", width: 18, kind: "moneyBase", align: "right" },
-        { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
-    ];
-    if (statementType === 'client' || statementType === 'supplier') {
-        return commonLedgerCols;
-    }
-    if (statementType === 'productMovement') {
-        return [
-            { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
-            { headerKey: "description", dataKey: "description", width: 45, kind: "text", align: "left" },
-            { headerKey: "type", dataKey: "type", width: 16, kind: "text", align: "left" },
-            { headerKey: "qtyIn", dataKey: "debitOrig", width: 15, kind: "qty", align: "right" },
-            { headerKey: "qtyOut", dataKey: "creditOrig", width: 15, kind: "qty", align: "right" },
-            { headerKey: "runningQty", dataKey: "runningBase", width: 18, kind: "qty", align: "right" },
-            { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
-        ];
-    }
-    if (statementType === 'expenses') {
-        return [
-            { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
-            { headerKey: "category", dataKey: "meta.category", width: 18, kind: "text", align: "left" },
-            { headerKey: "description", dataKey: "description", width: 40, kind: "text", align: "left" },
-            { headerKey: "amount", dataKey: "meta.amountOrig", width: 16, kind: "moneyOrig", align: "right" },
-            { headerKey: "currency", dataKey: "currency", width: 10, kind: "text", align: "center" },
-            { headerKey: "fxRate", dataKey: "meta.fxEnteredRate", width: 14, kind: "number", align: "right" },
-            { headerKey: "amountBase", dataKey: "meta.amountBase", width: 18, kind: "moneyBase", align: "right" },
-            { headerKey: "paidTo", dataKey: "meta.paidTo", width: 22, kind: "text", align: "left" },
-            { headerKey: "employee", dataKey: "meta.employee", width: 22, kind: "text", align: "left" },
-            { headerKey: "createdBy", dataKey: "meta.createdBy", width: 22, kind: "text", align: "left" },
-            { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
-        ];
-    }
-    return commonLedgerCols; // Default
-}
-// --- UTILITY FUNCTIONS ---
 function safeNumFmt(currency) {
-    if (currency === 'QTY')
-        return '#,##0.00';
     try {
         return (0, money_1.excelNumFmtForCurrency)(currency) || '#,##0.00';
     }
@@ -198,109 +241,516 @@ function safeNumFmt(currency) {
         return '#,##0.00';
     }
 }
-function isoDate(d) {
-    if (!d)
+function entityNameFromLabel(label) {
+    return String(label || '')
+        .replace(/^Client:\s*/i, '')
+        .replace(/^Supplier:\s*/i, '')
+        .replace(/^Product:\s*/i, '')
+        .trim();
+}
+function statusForClient(closing, locale) {
+    if (closing > 0)
+        return t(locale, 'hasLoan');
+    if (closing < 0)
+        return t(locale, 'overpaid');
+    return t(locale, 'settled');
+}
+function statusForSupplier(closing, locale) {
+    if (closing < 0)
+        return t(locale, 'overpaid');
+    if (closing > 0)
+        return t(locale, 'payable');
+    return t(locale, 'settled');
+}
+// Prefer entered rate; else invert fxRateToBase (because templates show 12200 style)
+function fxDisplay(row, baseCurrency) {
+    var _a;
+    if (row.currency === baseCurrency)
+        return 1;
+    const entered = (_a = row === null || row === void 0 ? void 0 : row.meta) === null || _a === void 0 ? void 0 : _a.fxEnteredRate;
+    if (typeof entered === 'number' && Number.isFinite(entered) && entered > 0)
+        return entered;
+    const r = row.fxRateToBase;
+    if (typeof r === 'number' && Number.isFinite(r) && r > 0)
+        return 1 / r;
+    return null;
+}
+function sumQtyFromItems(items) {
+    var _a, _b;
+    if (!Array.isArray(items) || !items.length)
         return null;
-    return d instanceof Date ? d : null;
-}
-function getRowValue(row, key) {
-    var _a, _b, _c;
-    if (key.startsWith('meta.')) {
-        const metaKey = key.substring(5);
-        return (_b = (_a = row.meta) === null || _a === void 0 ? void 0 : _a[metaKey]) !== null && _b !== void 0 ? _b : null;
-    }
-    return (_c = row[key]) !== null && _c !== void 0 ? _c : null;
-}
-// --- 3. MAIN WORKBOOK BUILDER ---
-async function buildStatementWorkbook(params) {
-    const { summary, rows, baseCurrency, statementType = "ledger" } = params;
-    const locale = params.locale || 'en';
-    const wb = new ExcelJS.Workbook();
-    wb.creator = 'FlowVia';
-    wb.created = new Date();
-    const sh = wb.addWorksheet('Statement');
-    // --- RTL Support ---
-    if (locale === 'ar') {
-        sh.views = [{ rightToLeft: true, state: 'frozen', ySplit: 6 }];
-    }
-    else {
-        sh.views = [{ state: 'frozen', ySplit: 6 }];
-    }
-    // --- Header Section ---
-    sh.mergeCells('A1:M1');
-    sh.getCell('A1').value = "FlowVia Business Solutions";
-    sh.getCell('A1').font = { name: 'Arial', size: 16, bold: true };
-    sh.getCell('A1').alignment = { horizontal: locale === 'ar' ? 'right' : 'left' };
-    sh.mergeCells('A2:M2');
-    sh.getCell('A2').value = statementTitle(locale, statementType);
-    sh.getCell('A2').font = { name: 'Arial', size: 14, bold: true };
-    sh.getCell('A2').alignment = { horizontal: locale === 'ar' ? 'right' : 'left' };
-    sh.getCell('A4').value = `${t(locale, 'period')}: ${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
-    sh.getCell('A4').font = { bold: true };
-    sh.getCell('A5').value = `${t(locale, 'baseCurrency')}: ${summary.baseCurrency}`;
-    sh.getCell('A5').font = { bold: true };
-    // --- Column Setup & Headers ---
-    const columns = getLocalizedColumns(locale, baseCurrency, statementType);
-    sh.columns = columns.map(c => ({
-        header: t(locale, c.headerKey, { baseCurrency }),
-        key: c.dataKey,
-        width: c.width
-    }));
-    const headerRow = sh.getRow(6);
-    headerRow.font = { bold: true };
-    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-    headerRow.eachCell(cell => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F7' } };
-        cell.border = {
-            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-        };
-    });
-    // --- Data Rows ---
-    if (rows.length === 0) {
-        const colsCount = columns.length;
-        if (colsCount > 0) {
-            sh.mergeCells(7, 1, 7, colsCount);
-            const noDataCell = sh.getCell(7, 1);
-            noDataCell.value = t(locale, 'noData');
-            noDataCell.alignment = { horizontal: 'center', vertical: 'middle' };
-            noDataCell.font = { italic: true, color: { argb: 'FF6B7280' } };
+    let s = 0;
+    let ok = false;
+    for (const it of items) {
+        const q = Number((_b = (_a = it === null || it === void 0 ? void 0 : it.qty) !== null && _a !== void 0 ? _a : it === null || it === void 0 ? void 0 : it.quantity) !== null && _b !== void 0 ? _b : 0);
+        if (Number.isFinite(q) && q) {
+            s += q;
+            ok = true;
         }
     }
-    else {
-        rows.forEach((r) => {
-            const rowObj = {};
-            columns.forEach(c => {
-                rowObj[c.dataKey] = getRowValue(r, c.dataKey);
-            });
-            const addedRow = sh.addRow(rowObj);
-            addedRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                const colDef = columns[colNumber - 1];
-                if (!colDef)
-                    return;
-                cell.alignment = { vertical: 'middle', horizontal: colDef.align || 'left', wrapText: true };
-                if (colDef.kind === 'date')
-                    cell.numFmt = 'yyyy-mm-dd';
-                if (colDef.kind === 'moneyOrig')
-                    cell.numFmt = safeNumFmt(r.currency || baseCurrency);
-                if (colDef.kind === 'moneyBase')
-                    cell.numFmt = safeNumFmt(baseCurrency);
-                if (colDef.kind === 'qty')
-                    cell.numFmt = '#,##0.00';
-                if (colDef.kind === 'number' && typeof cell.value === 'number')
-                    cell.numFmt = '0.00####';
-                if (r.fxStatus === 'MISSING' && ['moneyBase', 'runningBase'].includes(colDef.kind)) {
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
-                    cell.font = { color: { argb: 'FF991B1B' } };
-                }
-            });
-        });
+    return ok ? s : null;
+}
+function unitPriceFromItems(items, currency) {
+    if (!Array.isArray(items) || !items.length)
+        return null;
+    const keys = ['unitPrice', 'sellPrice', 'sellingPrice', 'price', 'unitPriceMinor', 'sellPriceMinor', 'sellingPriceMinor', 'priceMinor'];
+    for (const it of items) {
+        for (const k of keys) {
+            if ((it === null || it === void 0 ? void 0 : it[k]) == null)
+                continue;
+            const v = Number(it[k]);
+            if (!Number.isFinite(v) || v <= 0)
+                continue;
+            // If key ends with Minor => convert
+            if (String(k).toLowerCase().includes('minor'))
+                return (0, money_1.minorToMajor)(v, currency);
+            return v;
+        }
     }
-    sh.autoFilter = {
-        from: { row: 6, column: 1 },
-        to: { row: 6, column: columns.length },
-    };
+    return null;
+}
+function applyRTL(ws, locale) {
+    if (locale === 'ar') {
+        ws.views = [{ rightToLeft: true }];
+    }
+}
+function setBold(ws, addr, val, size) {
+    var _a, _b;
+    const c = ws.getCell(addr);
+    c.value = val;
+    c.font = Object.assign({ name: 'Arial', bold: true }, (size ? { size } : {}));
+    if ((_b = (_a = ws.views) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.rightToLeft)
+        c.alignment = { horizontal: 'right' };
+}
+function setText(ws, addr, val) {
+    var _a, _b;
+    const c = ws.getCell(addr);
+    c.value = val;
+    if ((_b = (_a = ws.views) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.rightToLeft)
+        c.alignment = { horizontal: 'right' };
+}
+function styleHeaderRow(ws, row, startCol, endCol) {
+    (0, exportUtils_1.styleTableHeader)(ws, row, startCol, endCol);
+}
+function styleBodyRow(ws, row, startCol, endCol) {
+    (0, exportUtils_1.styleTableBodyRow)(ws, row, startCol, endCol);
+}
+function buildExpensesSheet(ws, summary, rows, baseCurrency, locale) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    applyRTL(ws, locale);
+    (0, exportUtils_1.setSheetPrintDefaults)(ws);
+    ws.getColumn('A').width = 15;
+    ws.getColumn('B').width = 40;
+    ws.getColumn('C').width = 28;
+    ws.getColumn('D').width = 15;
+    ws.getColumn('E').width = 12;
+    ws.getColumn('F').width = 18;
+    setBold(ws, 'B5', t(locale, 'company'), 16);
+    setBold(ws, 'B7', t(locale, 'expenses'), 12);
+    setBold(ws, 'A9', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    // Header row 10
+    ws.getRow(10).values = [
+        t(locale, 'h_date'),
+        t(locale, 'h_description'),
+        t(locale, 'h_expenseType'),
+        t(locale, 'h_price'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+    ];
+    styleHeaderRow(ws, 10, 1, 6);
+    if (!rows.length) {
+        ws.getCell('A11').value = t(locale, 'noData');
+        return;
+    }
+    let r = 11;
+    for (const x of rows) {
+        const cat = (_c = (_b = (_a = x.meta) === null || _a === void 0 ? void 0 : _a.category) !== null && _b !== void 0 ? _b : x.category) !== null && _c !== void 0 ? _c : '';
+        const price = (typeof x.debitOrig === 'number' ? x.debitOrig : ((_e = (_d = x.meta) === null || _d === void 0 ? void 0 : _d.amountOrig) !== null && _e !== void 0 ? _e : null));
+        const fx = fxDisplay(x, baseCurrency);
+        ws.getRow(r).values = [
+            x.businessDate,
+            (_f = x.description) !== null && _f !== void 0 ? _f : '',
+            cat !== null && cat !== void 0 ? cat : '',
+            price !== null && price !== void 0 ? price : '',
+            (_g = x.currency) !== null && _g !== void 0 ? _g : '',
+            fx !== null && fx !== void 0 ? fx : '',
+        ];
+        // formats
+        ws.getCell(r, 1).numFmt = 'yyyy-mm-dd';
+        ws.getCell(r, 4).numFmt = safeNumFmt(String(x.currency || baseCurrency));
+        ws.getCell(r, 6).numFmt = '0.########';
+        styleBodyRow(ws, r, 1, 6);
+        r++;
+    }
+}
+function buildClientSheet(ws, summary, rows, baseCurrency, locale) {
+    var _a, _b, _c, _d, _e, _f;
+    applyRTL(ws, locale);
+    (0, exportUtils_1.setSheetPrintDefaults)(ws);
+    // widths A..L
+    const widths = [15, 40, 18, 16, 12, 14, 18, 4, 15, 12, 14, 18];
+    for (let i = 1; i <= 12; i++)
+        ws.getColumn(i).width = widths[i - 1];
+    setBold(ws, 'B3', t(locale, 'company'), 16);
+    setBold(ws, 'A8', t(locale, 'clientStatment'), 12);
+    setBold(ws, 'C8', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    const name = entityNameFromLabel(summary.entityLabel);
+    setBold(ws, 'A9', t(locale, 'name'));
+    setText(ws, 'B9', name);
+    setBold(ws, 'A10', t(locale, 'balance'));
+    ws.getCell('B10').value = summary.closingBase;
+    ws.getCell('B10').numFmt = safeNumFmt(String(baseCurrency));
+    setBold(ws, 'A11', t(locale, 'status'));
+    setText(ws, 'B11', statusForClient(summary.closingBase, locale));
+    setBold(ws, 'B14', t(locale, 'clientLedger'), 12);
+    setBold(ws, 'I14', t(locale, 'amountPaid'), 12);
+    setBold(ws, 'A16', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    // Header row 18 (A..L)
+    ws.getRow(18).values = [
+        t(locale, 'h_date'),
+        t(locale, 'h_productBought'),
+        t(locale, 'h_qty'),
+        t(locale, 'h_soldPrice'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+        t(locale, 'h_contractAmount'),
+        '',
+        t(locale, 'h_paidDate'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+        t(locale, 'h_paid'),
+    ];
+    styleHeaderRow(ws, 18, 1, 12);
+    if (!rows.length) {
+        ws.getCell('A19').value = t(locale, 'noData');
+        return;
+    }
+    let r = 19;
+    for (const x of rows) {
+        const items = (_a = x.meta) === null || _a === void 0 ? void 0 : _a.items;
+        const qty = sumQtyFromItems(items);
+        const unit = unitPriceFromItems(items, String(x.currency || baseCurrency));
+        const fx = fxDisplay(x, baseCurrency);
+        const isPurchase = String(x.type).toLowerCase() === 'purchase';
+        const isPayment = String(x.type).toLowerCase() === 'payment';
+        if (isPurchase) {
+            ws.getRow(r).values = [
+                x.businessDate,
+                (Array.isArray(items) && items.length)
+                    ? items.map((it) => { var _a, _b; return String((_b = (_a = it === null || it === void 0 ? void 0 : it.name) !== null && _a !== void 0 ? _a : it === null || it === void 0 ? void 0 : it.productName) !== null && _b !== void 0 ? _b : ''); }).filter(Boolean).join(', ') || x.description
+                    : ((_b = x.description) !== null && _b !== void 0 ? _b : ''),
+                qty !== null && qty !== void 0 ? qty : '',
+                unit !== null && unit !== void 0 ? unit : '',
+                (_c = x.currency) !== null && _c !== void 0 ? _c : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                (typeof x.debitOrig === 'number' ? x.debitOrig : ''),
+                '',
+                '',
+                '',
+                '',
+                '',
+            ];
+            ws.getCell(r, 1).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 4).numFmt = unit ? safeNumFmt(String(x.currency || baseCurrency)) : 'General';
+            ws.getCell(r, 7).numFmt = safeNumFmt(String(x.currency || baseCurrency));
+            ws.getCell(r, 6).numFmt = '0.########';
+        }
+        else if (isPayment) {
+            ws.getRow(r).values = [
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                x.businessDate,
+                (_d = x.currency) !== null && _d !== void 0 ? _d : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                (typeof x.creditOrig === 'number' ? x.creditOrig : ''),
+            ];
+            ws.getCell(r, 9).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 12).numFmt = safeNumFmt(String(x.currency || baseCurrency));
+            ws.getCell(r, 11).numFmt = '0.########';
+        }
+        else {
+            // fallback: show as description on left
+            ws.getRow(r).values = [
+                x.businessDate,
+                (_e = x.description) !== null && _e !== void 0 ? _e : '',
+                '',
+                '',
+                (_f = x.currency) !== null && _f !== void 0 ? _f : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+            ];
+            ws.getCell(r, 1).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 6).numFmt = '0.########';
+        }
+        styleBodyRow(ws, r, 1, 12);
+        r++;
+    }
+}
+function buildSupplierSheet(ws, summary, rows, baseCurrency, locale) {
+    var _a, _b, _c, _d, _e, _f;
+    applyRTL(ws, locale);
+    (0, exportUtils_1.setSheetPrintDefaults)(ws);
+    // widths A..K
+    const widths = [18, 40, 12, 16, 12, 14, 18, 15, 12, 14, 18];
+    for (let i = 1; i <= 11; i++)
+        ws.getColumn(i).width = widths[i - 1];
+    setBold(ws, 'B3', t(locale, 'company'), 16);
+    setBold(ws, 'A6', t(locale, 'supplierStatment'), 12);
+    setBold(ws, 'C6', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    const name = entityNameFromLabel(summary.entityLabel);
+    setBold(ws, 'A7', t(locale, 'name'));
+    setText(ws, 'B7', name);
+    setBold(ws, 'A8', t(locale, 'balance'));
+    ws.getCell('B8').value = summary.closingBase;
+    ws.getCell('B8').numFmt = safeNumFmt(String(baseCurrency));
+    setBold(ws, 'A9', t(locale, 'status'));
+    setText(ws, 'B9', statusForSupplier(summary.closingBase, locale));
+    setBold(ws, 'B13', t(locale, 'supplierLedger'), 12);
+    setBold(ws, 'H13', t(locale, 'amountPaid'), 12);
+    setBold(ws, 'A15', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    // Header row 17 (A..K)
+    ws.getRow(17).values = [
+        t(locale, 'h_date'),
+        t(locale, 'h_description'),
+        t(locale, 'h_qty'),
+        t(locale, 'h_priceOrigin'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+        t(locale, 'h_contractAmount'),
+        t(locale, 'h_paidDate'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+        t(locale, 'h_paid'),
+    ];
+    styleHeaderRow(ws, 17, 1, 11);
+    if (!rows.length) {
+        ws.getCell('A18').value = t(locale, 'noData');
+        return;
+    }
+    let r = 18;
+    for (const x of rows) {
+        const items = (_a = x.meta) === null || _a === void 0 ? void 0 : _a.items;
+        const qty = sumQtyFromItems(items);
+        const unit = unitPriceFromItems(items, String(x.currency || baseCurrency));
+        const fx = fxDisplay(x, baseCurrency);
+        const isPurchase = String(x.type).toLowerCase() === 'purchase';
+        const isPayment = String(x.type).toLowerCase() === 'payment';
+        if (isPurchase) {
+            ws.getRow(r).values = [
+                x.businessDate,
+                (_b = x.description) !== null && _b !== void 0 ? _b : '',
+                qty !== null && qty !== void 0 ? qty : '',
+                unit !== null && unit !== void 0 ? unit : '',
+                (_c = x.currency) !== null && _c !== void 0 ? _c : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                (typeof x.creditOrig === 'number' ? x.creditOrig : ''),
+                '',
+                '',
+                '',
+                '',
+            ];
+            ws.getCell(r, 1).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 4).numFmt = unit ? safeNumFmt(String(x.currency || baseCurrency)) : 'General';
+            ws.getCell(r, 7).numFmt = safeNumFmt(String(x.currency || baseCurrency));
+            ws.getCell(r, 6).numFmt = '0.########';
+        }
+        else if (isPayment) {
+            ws.getRow(r).values = [
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                '',
+                x.businessDate,
+                (_d = x.currency) !== null && _d !== void 0 ? _d : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                (typeof x.debitOrig === 'number' ? x.debitOrig : ''),
+            ];
+            ws.getCell(r, 8).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 11).numFmt = safeNumFmt(String(x.currency || baseCurrency));
+            ws.getCell(r, 10).numFmt = '0.########';
+        }
+        else {
+            ws.getRow(r).values = [
+                x.businessDate,
+                (_e = x.description) !== null && _e !== void 0 ? _e : '',
+                '',
+                '',
+                (_f = x.currency) !== null && _f !== void 0 ? _f : '',
+                fx !== null && fx !== void 0 ? fx : '',
+                '',
+                '',
+                '',
+                '',
+                '',
+            ];
+            ws.getCell(r, 1).numFmt = 'yyyy-mm-dd';
+            ws.getCell(r, 6).numFmt = '0.########';
+        }
+        styleBodyRow(ws, r, 1, 11);
+        r++;
+    }
+}
+function buildProductSheet(ws, summary, rows, locale) {
+    var _a, _b, _c;
+    applyRTL(ws, locale);
+    (0, exportUtils_1.setSheetPrintDefaults)(ws);
+    // widths A..L
+    const widths = [14, 40, 18, 14, 12, 16, 28, 14, 14, 16, 12, 28];
+    for (let i = 1; i <= 12; i++)
+        ws.getColumn(i).width = widths[i - 1];
+    setBold(ws, 'B6', t(locale, 'company'), 16);
+    // Product info: take from first row meta if present
+    const meta0 = ((_a = rows === null || rows === void 0 ? void 0 : rows[0]) === null || _a === void 0 ? void 0 : _a.meta) || {};
+    const productName = meta0.productName || entityNameFromLabel(summary.entityLabel);
+    const productCode = meta0.productCode || '';
+    const category = meta0.category || '';
+    const cur = meta0.currency || '';
+    const purchasePrice = (typeof meta0.purchasePrice === 'number' ? meta0.purchasePrice : null);
+    const sellingPrice = (typeof meta0.sellingPrice === 'number' ? meta0.sellingPrice : null);
+    const profit = (purchasePrice != null && sellingPrice != null) ? (sellingPrice - purchasePrice) : null;
+    const remainingValue = (purchasePrice != null) ? (Number(summary.closingBase || 0) * purchasePrice) : null;
+    setBold(ws, 'A12', t(locale, 'productStatment'), 12);
+    setText(ws, 'B12', String(productName || ''));
+    setBold(ws, 'A15', t(locale, 'dateRange', { from: iso(summary.periodFrom), to: iso(summary.periodTo) }));
+    ws.getRow(16).values = [
+        t(locale, 'h_date'),
+        t(locale, 'h_description'),
+        t(locale, 'h_productCode'),
+        t(locale, 'h_category'),
+        t(locale, 'h_currency'),
+        t(locale, 'h_exchangeRate'),
+        t(locale, 'h_balanceWas'),
+        t(locale, 'h_qtyLeft'),
+        t(locale, 'h_priceOrigin'),
+        t(locale, 'h_sellingPrice'),
+        t(locale, 'h_profit'),
+        t(locale, 'h_remainingValue'),
+    ];
+    styleHeaderRow(ws, 16, 1, 12);
+    // Row 17 summary line (matches template)
+    ws.getRow(17).values = [
+        summary.periodTo,
+        String(productName || ''),
+        String(productCode || ''),
+        String(category || ''),
+        String(cur || ''),
+        '',
+        (_b = summary.openingBase) !== null && _b !== void 0 ? _b : 0,
+        (_c = summary.closingBase) !== null && _c !== void 0 ? _c : 0,
+        purchasePrice !== null && purchasePrice !== void 0 ? purchasePrice : '',
+        sellingPrice !== null && sellingPrice !== void 0 ? sellingPrice : '',
+        profit !== null && profit !== void 0 ? profit : '',
+        remainingValue !== null && remainingValue !== void 0 ? remainingValue : '',
+    ];
+    ws.getCell(17, 1).numFmt = 'yyyy-mm-dd';
+    ws.getCell(17, 7).numFmt = '#,##0.00';
+    ws.getCell(17, 8).numFmt = '#,##0.00';
+    if (purchasePrice != null)
+        ws.getCell(17, 9).numFmt = '#,##0.00';
+    if (sellingPrice != null)
+        ws.getCell(17, 10).numFmt = '#,##0.00';
+    if (profit != null)
+        ws.getCell(17, 11).numFmt = '#,##0.00';
+    if (remainingValue != null)
+        ws.getCell(17, 12).numFmt = '#,##0.00';
+    styleBodyRow(ws, 17, 1, 12);
+}
+function buildSummarySheet(wb, summary, baseCurrency, locale) {
+    var _a;
+    const sh = wb.addWorksheet('Summary', { views: [{ showGridLines: false, rightToLeft: locale === 'ar' }] });
+    sh.getColumn(1).width = 22;
+    sh.getColumn(2).width = 46;
+    sh.getColumn(3).width = 18;
+    sh.mergeCells('A1:B1');
+    sh.getCell('A1').value = summary.title;
+    sh.getCell('A1').font = { name: 'Arial', size: 16, bold: true };
+    sh.getCell('A2').value = t(locale, 'sum_exportVer', { v: '2026-02-10-v1' });
+    sh.getCell('A3').value = t(locale, 'sum_entity');
+    sh.getCell('B3').value = summary.entityLabel;
+    sh.getCell('A4').value = t(locale, 'sum_period');
+    sh.getCell('B4').value = `${iso(summary.periodFrom)} → ${iso(summary.periodTo)}`;
+    sh.getCell('A5').value = t(locale, 'sum_base');
+    sh.getCell('B5').value = String(summary.baseCurrency || baseCurrency);
+    const fmt = safeNumFmt(String(baseCurrency));
+    sh.getCell('A7').value = t(locale, 'sum_opening');
+    sh.getCell('B7').value = summary.openingBase;
+    sh.getCell('B7').numFmt = fmt;
+    sh.getCell('A8').value = t(locale, 'sum_totalDebit');
+    sh.getCell('B8').value = summary.totalDebitBase;
+    sh.getCell('B8').numFmt = fmt;
+    sh.getCell('A9').value = t(locale, 'sum_totalCredit');
+    sh.getCell('B9').value = summary.totalCreditBase;
+    sh.getCell('B9').numFmt = fmt;
+    sh.getCell('A10').value = t(locale, 'sum_closing');
+    sh.getCell('B10').value = summary.closingBase;
+    sh.getCell('B10').numFmt = fmt;
+    sh.getCell('A12').value = t(locale, 'sum_warnings');
+    sh.getCell('B12').value = ((_a = summary.warnings) === null || _a === void 0 ? void 0 : _a.length) ? summary.warnings.join('\n') : t(locale, 'dash');
+    sh.getCell('B12').alignment = { wrapText: true };
+    let r = 14;
+    sh.getCell(`A${r}`).value = t(locale, 'sum_totalsByCur');
+    sh.getCell(`A${r}`).font = { bold: true };
+    r++;
+    sh.getCell(`A${r}`).value = t(locale, 'sum_currency');
+    sh.getCell(`B${r}`).value = t(locale, 'sum_debit');
+    sh.getCell(`C${r}`).value = t(locale, 'sum_credit');
+    sh.getRow(r).font = { bold: true };
+    r++;
+    Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, v]) => {
+        sh.getCell(`A${r}`).value = cur;
+        sh.getCell(`B${r}`).value = v.debit;
+        sh.getCell(`C${r}`).value = v.credit;
+        const f = safeNumFmt(cur);
+        sh.getCell(`B${r}`).numFmt = f;
+        sh.getCell(`C${r}`).numFmt = f;
+        r++;
+    });
+}
+async function buildStatementWorkbook(params) {
+    const { summary, rows, baseCurrency, locale, statementType } = params;
+    const wb = new ExcelJS.Workbook();
+    (0, exportUtils_1.applyGlobalWorkbookStyle)(wb);
+    // This must be BEFORE any sheets are added to affect the default view
+    wb.views = [{ activeTab: 0 }];
+    const ws = wb.addWorksheet('Statement');
+    // Build template-style statement
+    if (statementType === 'expenses') {
+        buildExpensesSheet(ws, summary, rows, baseCurrency, locale);
+    }
+    else if (statementType === 'client') {
+        buildClientSheet(ws, summary, rows, baseCurrency, locale);
+    }
+    else if (statementType === 'supplier') {
+        buildSupplierSheet(ws, summary, rows, baseCurrency, locale);
+    }
+    else if (statementType === 'productMovement') {
+        buildProductSheet(ws, summary, rows, locale);
+    }
+    else {
+        // fallback
+        setBold(ws, 'B3', t(locale, 'company'), 16);
+        setText(ws, 'B5', t(locale, 'noData'));
+    }
+    // Summary sheet
+    buildSummarySheet(wb, summary, baseCurrency, locale);
     const buf = await wb.xlsx.writeBuffer();
+    if (!buf || buf.byteLength === 0) {
+        throw new Error('Workbook buffer is empty.');
+    }
     return Buffer.from(buf);
 }
 //# sourceMappingURL=statement-engine.js.map

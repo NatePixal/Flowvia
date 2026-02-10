@@ -234,7 +234,7 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
 function t(locale: string | undefined, key: string, params?: Record<string, string>): string {
   const lang: Record<string, string> = TRANSLATIONS[(locale as Locale) || 'en'] || TRANSLATIONS.en;
   let s = lang[key] ?? TRANSLATIONS.en[key] ?? key;
-  if (params) for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, v);
+  if (params) for (const [k, v] of Object.entries(params)) s = s.split(`{${k}}`).join(v);
   return s;
 }
 
@@ -774,8 +774,15 @@ export async function buildStatementWorkbook(params: {
   const wb = new ExcelJS.Workbook();
   applyGlobalWorkbookStyle(wb);
 
-  // This must be BEFORE any sheets are added to affect the default view
-  wb.views = [{ activeTab: 0 }];
+  wb.views = [{
+    x: 0,
+    y: 0,
+    width: 10000,
+    height: 20000,
+    firstSheet: 0,
+    activeTab: 0,
+    visibility: 'visible',
+  }];
 
   const ws = wb.addWorksheet('Statement');
 
