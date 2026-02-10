@@ -216,7 +216,7 @@ async function exportStockReportExcel(input) {
             const p = productDoc;
             const purchasePriceMinor = (_c = (_b = (_a = p.purchasePriceMinor) !== null && _a !== void 0 ? _a : p.costMinor) !== null && _b !== void 0 ? _b : p.avgCostMinor) !== null && _c !== void 0 ? _c : p.averageCostMinor;
             if (typeof purchasePriceMinor === 'number') {
-                priceOrigin = (0, money_1.fromMinor)(purchasePriceMinor, (p.purchasePriceCurrency || input.baseCurrency));
+                priceOrigin = (0, money_1.minorToMajor)(purchasePriceMinor, (p.purchasePriceCurrency || input.baseCurrency));
             }
             else {
                 const purchasePriceMajor = (_f = (_e = (_d = p.purchasePrice) !== null && _d !== void 0 ? _d : p.cost) !== null && _e !== void 0 ? _e : p.avgCost) !== null && _f !== void 0 ? _f : p.averageCost;

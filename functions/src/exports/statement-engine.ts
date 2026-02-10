@@ -773,8 +773,8 @@ export async function buildStatementWorkbook(params: {
 
   const wb = new ExcelJS.Workbook();
   applyGlobalWorkbookStyle(wb);
-
-  wb.views = [{
+  
+  (wb as any).views = [{
     x: 0,
     y: 0,
     width: 10000,
@@ -805,8 +805,5 @@ export async function buildStatementWorkbook(params: {
   buildSummarySheet(wb, summary, baseCurrency, locale);
 
   const buf = await wb.xlsx.writeBuffer();
-  if (!buf || buf.byteLength === 0) {
-    throw new Error('Workbook buffer is empty.');
-  }
   return Buffer.from(buf);
 }

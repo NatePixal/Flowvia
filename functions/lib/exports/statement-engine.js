@@ -227,7 +227,7 @@ function t(locale, key, params) {
     let s = (_b = (_a = lang[key]) !== null && _a !== void 0 ? _a : TRANSLATIONS.en[key]) !== null && _b !== void 0 ? _b : key;
     if (params)
         for (const [k, v] of Object.entries(params))
-            s = s.replaceAll(`{${k}}`, v);
+            s = s.split(`{${k}}`).join(v);
     return s;
 }
 function iso(d) {
@@ -724,8 +724,15 @@ async function buildStatementWorkbook(params) {
     const { summary, rows, baseCurrency, locale, statementType } = params;
     const wb = new ExcelJS.Workbook();
     (0, exportUtils_1.applyGlobalWorkbookStyle)(wb);
-    // This must be BEFORE any sheets are added to affect the default view
-    wb.views = [{ activeTab: 0 }];
+    wb.views = [{
+            x: 0,
+            y: 0,
+            width: 10000,
+            height: 20000,
+            firstSheet: 0,
+            activeTab: 0,
+            visibility: 'visible',
+        }];
     const ws = wb.addWorksheet('Statement');
     // Build template-style statement
     if (statementType === 'expenses') {
