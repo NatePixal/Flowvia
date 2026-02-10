@@ -128,60 +128,9 @@ async function buildStatementWorkbook(params) {
     var _a;
     const { summary, rows, baseCurrency, statementType } = params;
     const wb = new ExcelJS.Workbook();
+    wb.views = [{ activeTab: 0 }]; // open on first sheet
     wb.creator = 'FlowVia';
     wb.created = new Date();
-    // ===== Summary sheet (keep yours, only small polish) =====
-    const shSummary = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] });
-    shSummary.columns = [
-        { header: '', key: 'k', width: 22 },
-        { header: '', key: 'v', width: 46 },
-    ];
-    shSummary.mergeCells('A1:B1');
-    shSummary.getCell('A1').value = summary.title;
-    shSummary.getCell('A1').font = { size: 16, bold: true };
-    shSummary.getCell('A2').value = 'Export version: 2026-02-07-v3';
-    shSummary.getCell('A3').value = 'Entity';
-    shSummary.getCell('B3').value = summary.entityLabel;
-    shSummary.getCell('A4').value = 'Period';
-    shSummary.getCell('B4').value =
-        `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
-    shSummary.getCell('A5').value = 'Base Currency';
-    shSummary.getCell('B5').value = String(summary.baseCurrency);
-    const baseFmt = safeNumFmt(baseCurrency);
-    shSummary.getCell('A7').value = 'Opening';
-    shSummary.getCell('B7').value = summary.openingBase;
-    shSummary.getCell('B7').numFmt = baseFmt;
-    shSummary.getCell('A8').value = 'Total Debit';
-    shSummary.getCell('B8').value = summary.totalDebitBase;
-    shSummary.getCell('B8').numFmt = baseFmt;
-    shSummary.getCell('A9').value = 'Total Credit';
-    shSummary.getCell('B9').value = summary.totalCreditBase;
-    shSummary.getCell('B9').numFmt = baseFmt;
-    shSummary.getCell('A10').value = 'Closing';
-    shSummary.getCell('B10').value = summary.closingBase;
-    shSummary.getCell('B10').numFmt = baseFmt;
-    shSummary.getCell('A12').value = 'Warnings';
-    shSummary.getCell('B12').value = ((_a = summary.warnings) === null || _a === void 0 ? void 0 : _a.length) ? summary.warnings.join('\n') : '—';
-    shSummary.getCell('B12').alignment = { wrapText: true };
-    // Totals by original currency
-    let r0 = 14;
-    shSummary.getCell(`A${r0}`).value = 'Totals by currency (original)';
-    shSummary.getCell(`A${r0}`).font = { bold: true };
-    r0++;
-    shSummary.getCell(`A${r0}`).value = 'Currency';
-    shSummary.getCell(`B${r0}`).value = 'Debit';
-    shSummary.getCell(`C${r0}`).value = 'Credit';
-    shSummary.getRow(r0).font = { bold: true };
-    r0++;
-    Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]) => {
-        shSummary.getCell(`A${r0}`).value = cur;
-        shSummary.getCell(`B${r0}`).value = t.debit;
-        shSummary.getCell(`C${r0}`).value = t.credit;
-        const fmt = safeNumFmt(cur);
-        shSummary.getCell(`B${r0}`).numFmt = fmt;
-        shSummary.getCell(`C${r0}`).numFmt = fmt;
-        r0++;
-    });
     // ===== Statement sheet (report-aware) =====
     const sh = wb.addWorksheet('Statement', { views: [{ state: 'frozen', ySplit: 1 }] });
     const report = statementType || 'ledger';
@@ -271,6 +220,58 @@ async function buildStatementWorkbook(params) {
         to: { row: 1, column: cols.length },
     };
     autoWidth(sh);
+    // ===== Summary sheet (keep yours, only small polish) =====
+    const shSummary = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] });
+    shSummary.columns = [
+        { header: '', key: 'k', width: 22 },
+        { header: '', key: 'v', width: 46 },
+    ];
+    shSummary.mergeCells('A1:B1');
+    shSummary.getCell('A1').value = summary.title;
+    shSummary.getCell('A1').font = { size: 16, bold: true };
+    shSummary.getCell('A2').value = 'Export version: 2026-02-07-v3';
+    shSummary.getCell('A3').value = 'Entity';
+    shSummary.getCell('B3').value = summary.entityLabel;
+    shSummary.getCell('A4').value = 'Period';
+    shSummary.getCell('B4').value =
+        `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
+    shSummary.getCell('A5').value = 'Base Currency';
+    shSummary.getCell('B5').value = String(summary.baseCurrency);
+    const baseFmt = safeNumFmt(baseCurrency);
+    shSummary.getCell('A7').value = 'Opening';
+    shSummary.getCell('B7').value = summary.openingBase;
+    shSummary.getCell('B7').numFmt = baseFmt;
+    shSummary.getCell('A8').value = 'Total Debit';
+    shSummary.getCell('B8').value = summary.totalDebitBase;
+    shSummary.getCell('B8').numFmt = baseFmt;
+    shSummary.getCell('A9').value = 'Total Credit';
+    shSummary.getCell('B9').value = summary.totalCreditBase;
+    shSummary.getCell('B9').numFmt = baseFmt;
+    shSummary.getCell('A10').value = 'Closing';
+    shSummary.getCell('B10').value = summary.closingBase;
+    shSummary.getCell('B10').numFmt = baseFmt;
+    shSummary.getCell('A12').value = 'Warnings';
+    shSummary.getCell('B12').value = ((_a = summary.warnings) === null || _a === void 0 ? void 0 : _a.length) ? summary.warnings.join('\n') : '—';
+    shSummary.getCell('B12').alignment = { wrapText: true };
+    // Totals by original currency
+    let r0 = 14;
+    shSummary.getCell(`A${r0}`).value = 'Totals by currency (original)';
+    shSummary.getCell(`A${r0}`).font = { bold: true };
+    r0++;
+    shSummary.getCell(`A${r0}`).value = 'Currency';
+    shSummary.getCell(`B${r0}`).value = 'Debit';
+    shSummary.getCell(`C${r0}`).value = 'Credit';
+    shSummary.getRow(r0).font = { bold: true };
+    r0++;
+    Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]) => {
+        shSummary.getCell(`A${r0}`).value = cur;
+        shSummary.getCell(`B${r0}`).value = t.debit;
+        shSummary.getCell(`C${r0}`).value = t.credit;
+        const fmt = safeNumFmt(cur);
+        shSummary.getCell(`B${r0}`).numFmt = fmt;
+        shSummary.getCell(`C${r0}`).numFmt = fmt;
+        r0++;
+    });
     const buf = await wb.xlsx.writeBuffer();
     return Buffer.from(buf);
 }
