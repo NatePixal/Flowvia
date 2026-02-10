@@ -2,8 +2,192 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildStatementWorkbook = buildStatementWorkbook;
 // functions/src/exports/statement-engine.ts
-const ExcelJS = require('exceljs');
+const ExcelJS = require("exceljs");
 const money_1 = require("./money");
+// --- 1. LOCAL, EXCEL-ONLY TRANSLATIONS ---
+const TRANSLATIONS = {
+    en: {
+        businessDate: "Business Date",
+        description: "Description",
+        type: "Type",
+        currency: "Currency",
+        debitOrig: "Debit (Orig)",
+        creditOrig: "Credit (Orig)",
+        runningBase: "Running Bal ({baseCurrency})",
+        reference: "Reference",
+        fxStatus: "FX Status",
+        reportTitle: "Report",
+        period: "Period",
+        baseCurrency: "Base Currency",
+        noData: "No data available for the selected period.",
+        clientTitle: "Client Statement",
+        supplierTitle: "Supplier Statement",
+        expensesTitle: "Expense Statement",
+        productMovementTitle: "Product Movement",
+        stockReportTitle: "Inventory Stock Report",
+        category: "Category",
+        amount: "Amount",
+        fxPair: "FX Pair",
+        fxRate: "FX Rate",
+        amountBase: "Amount ({baseCurrency})",
+        paidTo: "Paid To",
+        employee: "Employee",
+        createdBy: "Created By",
+        qtyIn: "Qty In",
+        qtyOut: "Qty Out",
+        runningQty: "Running Qty",
+    },
+    ru: {
+        businessDate: "Рабочая дата",
+        description: "Описание",
+        type: "Тип",
+        currency: "Валюта",
+        debitOrig: "Дебет (ориг.)",
+        creditOrig: "Кредит (ориг.)",
+        runningBase: "Остаток ({baseCurrency})",
+        reference: "Ссылка",
+        fxStatus: "Статус FX",
+        reportTitle: "Отчет",
+        period: "Период",
+        baseCurrency: "Базовая валюта",
+        noData: "Нет данных за выбранный период.",
+        clientTitle: "Выписка по клиенту",
+        supplierTitle: "Выписка по поставщику",
+        expensesTitle: "Отчет о расходах",
+        productMovementTitle: "Движение товара",
+        stockReportTitle: "Отчет по складу",
+        category: "Категория",
+        amount: "Сумма",
+        fxPair: "Валютная пара",
+        fxRate: "Курс",
+        amountBase: "Сумма ({baseCurrency})",
+        paidTo: "Получатель",
+        employee: "Сотрудник",
+        createdBy: "Создал",
+        qtyIn: "Кол-во (приход)",
+        qtyOut: "Кол-во (расход)",
+        runningQty: "Остаток (кол-во)",
+    },
+    uz: {
+        businessDate: "Ish kuni",
+        description: "Tavsif",
+        type: "Turi",
+        currency: "Valyuta",
+        debitOrig: "Debet (asl)",
+        creditOrig: "Kredit (asl)",
+        runningBase: "Qoldiq ({baseCurrency})",
+        reference: "Manba",
+        fxStatus: "Valyuta holati",
+        reportTitle: "Hisobot",
+        period: "Davr",
+        baseCurrency: "Asosiy valyuta",
+        noData: "Tanlangan davr uchun ma'lumotlar mavjud emas.",
+        clientTitle: "Mijoz hisoboti",
+        supplierTitle: "Yetkazib beruvchi hisoboti",
+        expensesTitle: "Xarajatlar hisoboti",
+        productMovementTitle: "Mahsulot harakati",
+        stockReportTitle: "Ombor hisoboti",
+        category: "Kategoriya",
+        amount: "Summa",
+        fxPair: "Valyuta juftligi",
+        fxRate: "Kurs",
+        amountBase: "Summa ({baseCurrency})",
+        paidTo: "To'lovchi",
+        employee: "Xodim",
+        createdBy: "Yaratdi",
+        qtyIn: "Miqdor (kirim)",
+        qtyOut: "Miqdor (chiqim)",
+        runningQty: "Qoldiq (miqdor)",
+    },
+    ar: {
+        businessDate: "تاريخ العمل",
+        description: "الوصف",
+        type: "النوع",
+        currency: "العملة",
+        debitOrig: "مدين (أصلي)",
+        creditOrig: "دائن (أصلي)",
+        runningBase: "الرصيد الجاري ({baseCurrency})",
+        reference: "مرجع",
+        fxStatus: "حالة الصرف",
+        reportTitle: "تقرير",
+        period: "فترة",
+        baseCurrency: "العملة الأساسية",
+        noData: "لا توجد بيانات متاحة للفترة المحددة.",
+        clientTitle: "كشف حساب العميل",
+        supplierTitle: "كشف حساب المورد",
+        expensesTitle: "تقرير المصروفات",
+        productMovementTitle: "حركة المنتج",
+        stockReportTitle: "تقرير المخزون",
+        category: "الفئة",
+        amount: "المبلغ",
+        fxPair: "زوج العملات",
+        fxRate: "سعر الصرف",
+        amountBase: "المبلغ ({baseCurrency})",
+        paidTo: "دفع لـ",
+        employee: "الموظف",
+        createdBy: "تم إنشاؤه بواسطة",
+        qtyIn: "الكمية الواردة",
+        qtyOut: "الكمية الصادرة",
+        runningQty: "الكمية المتبقية",
+    },
+};
+function t(locale, key, params) {
+    const lang = TRANSLATIONS[locale] || TRANSLATIONS.en;
+    let text = lang[key] || TRANSLATIONS.en[key] || key;
+    if (params) {
+        for (const [k, v] of Object.entries(params)) {
+            text = text.replace(`{${k}}`, v);
+        }
+    }
+    return text;
+}
+function statementTitle(locale, statementType) {
+    const key = `${statementType}Title`;
+    return t(locale, key, {});
+}
+function getLocalizedColumns(locale, baseCurrency, statementType) {
+    const commonLedgerCols = [
+        { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
+        { headerKey: "description", dataKey: "description", width: 40, kind: "text", align: "left" },
+        { headerKey: "type", dataKey: "type", width: 14, kind: "text", align: "left" },
+        { headerKey: "currency", dataKey: "currency", width: 10, kind: "text", align: "center" },
+        { headerKey: "debitOrig", dataKey: "debitOrig", width: 16, kind: "moneyOrig", align: "right" },
+        { headerKey: "creditOrig", dataKey: "creditOrig", width: 16, kind: "moneyOrig", align: "right" },
+        { headerKey: "runningBase", dataKey: "runningBase", width: 18, kind: "moneyBase", align: "right" },
+        { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
+    ];
+    if (statementType === 'client' || statementType === 'supplier') {
+        return commonLedgerCols;
+    }
+    if (statementType === 'productMovement') {
+        return [
+            { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
+            { headerKey: "description", dataKey: "description", width: 45, kind: "text", align: "left" },
+            { headerKey: "type", dataKey: "type", width: 16, kind: "text", align: "left" },
+            { headerKey: "qtyIn", dataKey: "debitOrig", width: 15, kind: "qty", align: "right" },
+            { headerKey: "qtyOut", dataKey: "creditOrig", width: 15, kind: "qty", align: "right" },
+            { headerKey: "runningQty", dataKey: "runningBase", width: 18, kind: "qty", align: "right" },
+            { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
+        ];
+    }
+    if (statementType === 'expenses') {
+        return [
+            { headerKey: "businessDate", dataKey: "businessDate", width: 14, kind: "date", align: "left" },
+            { headerKey: "category", dataKey: "meta.category", width: 18, kind: "text", align: "left" },
+            { headerKey: "description", dataKey: "description", width: 40, kind: "text", align: "left" },
+            { headerKey: "amount", dataKey: "meta.amountOrig", width: 16, kind: "moneyOrig", align: "right" },
+            { headerKey: "currency", dataKey: "currency", width: 10, kind: "text", align: "center" },
+            { headerKey: "fxRate", dataKey: "meta.fxEnteredRate", width: 14, kind: "number", align: "right" },
+            { headerKey: "amountBase", dataKey: "meta.amountBase", width: 18, kind: "moneyBase", align: "right" },
+            { headerKey: "paidTo", dataKey: "meta.paidTo", width: 22, kind: "text", align: "left" },
+            { headerKey: "employee", dataKey: "meta.employee", width: 22, kind: "text", align: "left" },
+            { headerKey: "createdBy", dataKey: "meta.createdBy", width: 22, kind: "text", align: "left" },
+            { headerKey: "reference", dataKey: "reference", width: 24, kind: "text", align: "left" },
+        ];
+    }
+    return commonLedgerCols; // Default
+}
+// --- UTILITY FUNCTIONS ---
 function safeNumFmt(currency) {
     if (currency === 'QTY')
         return '#,##0.00';
@@ -17,261 +201,105 @@ function safeNumFmt(currency) {
 function isoDate(d) {
     if (!d)
         return null;
-    return d; // return Date object so Excel treats it as a date
+    return d instanceof Date ? d : null;
 }
-function text(v) {
-    if (v === null || v === undefined)
-        return '';
-    if (typeof v === 'string')
-        return v;
-    if (typeof v === 'number' || typeof v === 'boolean')
-        return String(v);
-    try {
-        return JSON.stringify(v);
+function getRowValue(row, key) {
+    var _a, _b, _c;
+    if (key.startsWith('meta.')) {
+        const metaKey = key.substring(5);
+        return (_b = (_a = row.meta) === null || _a === void 0 ? void 0 : _a[metaKey]) !== null && _b !== void 0 ? _b : null;
     }
-    catch (_a) {
-        return String(v);
-    }
+    return (_c = row[key]) !== null && _c !== void 0 ? _c : null;
 }
-function autoWidth(ws, max = 60) {
-    ws.columns.forEach((col) => {
-        let w = col.width || 10;
-        col.eachCell({ includeEmpty: false }, (cell) => {
-            const val = cell.value;
-            const len = typeof val === 'string' ? val.length : ((val === null || val === void 0 ? void 0 : val.richText) ? 20 : 12);
-            w = Math.max(w, Math.min(max, len + 2));
-        });
-        col.width = Math.max(col.width || 10, Math.min(max, w));
-    });
-}
-function styleHeader(ws) {
-    const r = ws.getRow(1);
-    r.font = { bold: true };
-    r.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    r.height = 20;
-    r.eachCell((cell) => {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-        cell.border = {
-            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        };
-    });
-}
-function styleRow(ws, rowIndex) {
-    const r = ws.getRow(rowIndex);
-    r.alignment = { vertical: 'top', wrapText: true };
-    r.eachCell((cell) => {
-        cell.border = {
-            top: { style: 'thin', color: { argb: 'FFF1F5F9' } },
-            left: { style: 'thin', color: { argb: 'FFF1F5F9' } },
-            bottom: { style: 'thin', color: { argb: 'FFF1F5F9' } },
-            right: { style: 'thin', color: { argb: 'FFF1F5F9' } },
-        };
-    });
-}
-function markFxMissing(ws, rowIndex, colIndexes) {
-    colIndexes.forEach((c) => {
-        const cell = ws.getCell(rowIndex, c);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } }; // light red
-        cell.font = { color: { argb: 'FF991B1B' } };
-    });
-}
-function getExpenseColumns(baseCurrency) {
-    return [
-        { header: 'Date', key: 'businessDate', width: 12, kind: 'date' },
-        { header: 'Category', key: 'category', width: 16, kind: 'text' },
-        { header: 'Description', key: 'description', width: 40, kind: 'text' },
-        { header: 'Amount', key: 'amountOrig', width: 14, kind: 'moneyOrig' },
-        { header: 'Currency', key: 'currency', width: 10, kind: 'text' },
-        { header: 'FX Pair', key: 'fxPair', width: 12, kind: 'text' },
-        { header: 'Entered Rate', key: 'fxEnteredRate', width: 14, kind: 'number' },
-        { header: 'Rate To Base', key: 'fxRateToBase', width: 14, kind: 'number' },
-        { header: `Amount (${baseCurrency})`, key: 'amountBase', width: 16, kind: 'moneyBase' },
-        { header: 'Paid To', key: 'paidTo', width: 22, kind: 'text' },
-        { header: 'Employee', key: 'employee', width: 18, kind: 'text' },
-        { header: 'Created By', key: 'createdBy', width: 20, kind: 'text' },
-        { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
-        { header: 'FX Status', key: 'fxStatus', width: 12, kind: 'text' },
-    ];
-}
-function getLedgerColumns(baseCurrency) {
-    return [
-        { header: 'Business Date', key: 'businessDate', width: 12, kind: 'date' },
-        { header: 'Description', key: 'description', width: 40, kind: 'text' },
-        { header: 'Type', key: 'type', width: 12, kind: 'text' },
-        { header: 'Currency', key: 'currency', width: 10, kind: 'text' },
-        { header: 'FX As-Of', key: 'fxAsOf', width: 12, kind: 'date' },
-        { header: 'FX Rate', key: 'fxRateToBase', width: 12, kind: 'number' },
-        { header: 'Debit (Orig)', key: 'debitOrig', width: 14, kind: 'moneyOrig' },
-        { header: 'Credit (Orig)', key: 'creditOrig', width: 14, kind: 'moneyOrig' },
-        { header: `Debit (${baseCurrency})`, key: 'debitBase', width: 16, kind: 'moneyBase' },
-        { header: `Credit (${baseCurrency})`, key: 'creditBase', width: 16, kind: 'moneyBase' },
-        { header: `Running (${baseCurrency})`, key: 'runningBase', width: 18, kind: 'moneyBase' },
-        { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
-        { header: 'FX Status', key: 'fxStatus', width: 12, kind: 'text' },
-    ];
-}
-function getProductColumns() {
-    return [
-        { header: 'Date', key: 'businessDate', width: 12, kind: 'date' },
-        { header: 'Description', key: 'description', width: 40, kind: 'text' },
-        { header: 'Type', key: 'type', width: 12, kind: 'text' },
-        { header: 'Qty In', key: 'debitOrig', width: 12, kind: 'qty' },
-        { header: 'Qty Out', key: 'creditOrig', width: 12, kind: 'qty' },
-        { header: 'Running Qty', key: 'runningBase', width: 14, kind: 'qty' },
-        { header: 'Reference', key: 'reference', width: 22, kind: 'text' },
-    ];
-}
+// --- 3. MAIN WORKBOOK BUILDER ---
 async function buildStatementWorkbook(params) {
-    var _a;
-    const { summary, rows, baseCurrency, statementType } = params;
+    const { summary, rows, baseCurrency, statementType = "ledger" } = params;
+    const locale = params.locale || 'en';
     const wb = new ExcelJS.Workbook();
-    wb.views = [{ activeTab: 0 }]; // open on first sheet
     wb.creator = 'FlowVia';
     wb.created = new Date();
-    // ===== Statement sheet (report-aware) =====
-    const sh = wb.addWorksheet('Statement', { views: [{ state: 'frozen', ySplit: 1 }] });
-    const report = statementType || 'ledger';
-    const cols = report === 'expenses'
-        ? getExpenseColumns(baseCurrency)
-        : report === 'productMovement'
-            ? getProductColumns()
-            : getLedgerColumns(baseCurrency);
-    sh.columns = cols.map(c => ({ header: c.header, key: c.key, width: c.width }));
-    styleHeader(sh);
-    // Print-friendly
-    sh.pageSetup = {
-        orientation: 'landscape',
-        fitToPage: true,
-        fitToWidth: 1,
-        fitToHeight: 0,
-        paperSize: 9, // A4
-        showGridLines: false,
-        horizontalCentered: true,
-    };
-    const baseMoneyFmt = safeNumFmt(baseCurrency);
-    rows.forEach((r, idx) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13;
-        // Normalize values for expense-friendly sheet
-        const amountOrig = ((_a = r.amountOrig) !== null && _a !== void 0 ? _a : ((r.debitOrig || 0) - (r.creditOrig || 0))) || 0;
-        const amountBase = ((_b = r.amountBase) !== null && _b !== void 0 ? _b : ((r.debitBase || 0) - (r.creditBase || 0))) || 0;
-        const rowObj = {
-            businessDate: isoDate(r.businessDate),
-            fxAsOf: isoDate(r.fxAsOf),
-            description: text(r.description),
-            type: text(r.type),
-            reference: text(r.reference),
-            currency: text(r.currency),
-            debitOrig: (_c = r.debitOrig) !== null && _c !== void 0 ? _c : null,
-            creditOrig: (_d = r.creditOrig) !== null && _d !== void 0 ? _d : null,
-            debitBase: (_e = r.debitBase) !== null && _e !== void 0 ? _e : null,
-            creditBase: (_f = r.creditBase) !== null && _f !== void 0 ? _f : null,
-            runningBase: (_g = r.runningBase) !== null && _g !== void 0 ? _g : null,
-            // Expense-specific fields (will be ignored by ledger sheet)
-            category: text((_k = (_h = r.category) !== null && _h !== void 0 ? _h : (_j = r.meta) === null || _j === void 0 ? void 0 : _j.category) !== null && _k !== void 0 ? _k : (_l = r.meta) === null || _l === void 0 ? void 0 : _l.expenseType),
-            paidTo: text((_t = (_r = (_p = (_m = r.paidTo) !== null && _m !== void 0 ? _m : (_o = r.meta) === null || _o === void 0 ? void 0 : _o.paidTo) !== null && _p !== void 0 ? _p : (_q = r.meta) === null || _q === void 0 ? void 0 : _q.paid_to_seller_name) !== null && _r !== void 0 ? _r : (_s = r.meta) === null || _s === void 0 ? void 0 : _s.vendor) !== null && _t !== void 0 ? _t : (_u = r.meta) === null || _u === void 0 ? void 0 : _u.payee),
-            employee: text((_x = (_v = r.employee) !== null && _v !== void 0 ? _v : (_w = r.meta) === null || _w === void 0 ? void 0 : _w.employee) !== null && _x !== void 0 ? _x : (_y = r.meta) === null || _y === void 0 ? void 0 : _y.employee_name),
-            createdBy: text((_1 = (_z = r.createdBy) !== null && _z !== void 0 ? _z : (_0 = r.meta) === null || _0 === void 0 ? void 0 : _0.createdBy) !== null && _1 !== void 0 ? _1 : (_2 = r.meta) === null || _2 === void 0 ? void 0 : _2.createdByUid),
-            fxPair: text((_5 = (_3 = r.fxPair) !== null && _3 !== void 0 ? _3 : (_4 = r.meta) === null || _4 === void 0 ? void 0 : _4.fxPair) !== null && _5 !== void 0 ? _5 : (_6 = r.meta) === null || _6 === void 0 ? void 0 : _6.enteredPair),
-            fxEnteredRate: (_11 = (_9 = (_7 = r.fxEnteredRate) !== null && _7 !== void 0 ? _7 : (_8 = r.meta) === null || _8 === void 0 ? void 0 : _8.fxEnteredRate) !== null && _9 !== void 0 ? _9 : (_10 = r.meta) === null || _10 === void 0 ? void 0 : _10.enteredRate) !== null && _11 !== void 0 ? _11 : null,
-            fxRateToBase: (_12 = r.fxRateToBase) !== null && _12 !== void 0 ? _12 : null,
-            fxStatus: text((_13 = r.fxStatus) !== null && _13 !== void 0 ? _13 : 'OK'),
-            amountOrig,
-            amountBase,
+    const sh = wb.addWorksheet('Statement');
+    // --- RTL Support ---
+    if (locale === 'ar') {
+        sh.views = [{ rightToLeft: true, state: 'frozen', ySplit: 6 }];
+    }
+    else {
+        sh.views = [{ state: 'frozen', ySplit: 6 }];
+    }
+    // --- Header Section ---
+    sh.mergeCells('A1:M1');
+    sh.getCell('A1').value = "FlowVia Business Solutions";
+    sh.getCell('A1').font = { name: 'Arial', size: 16, bold: true };
+    sh.getCell('A1').alignment = { horizontal: locale === 'ar' ? 'right' : 'left' };
+    sh.mergeCells('A2:M2');
+    sh.getCell('A2').value = statementTitle(locale, statementType);
+    sh.getCell('A2').font = { name: 'Arial', size: 14, bold: true };
+    sh.getCell('A2').alignment = { horizontal: locale === 'ar' ? 'right' : 'left' };
+    sh.getCell('A4').value = `${t(locale, 'period')}: ${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
+    sh.getCell('A4').font = { bold: true };
+    sh.getCell('A5').value = `${t(locale, 'baseCurrency')}: ${summary.baseCurrency}`;
+    sh.getCell('A5').font = { bold: true };
+    // --- Column Setup & Headers ---
+    const columns = getLocalizedColumns(locale, baseCurrency, statementType);
+    sh.columns = columns.map(c => ({
+        header: t(locale, c.headerKey, { baseCurrency }),
+        key: c.dataKey,
+        width: c.width
+    }));
+    const headerRow = sh.getRow(6);
+    headerRow.font = { bold: true };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F7' } };
+        cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
         };
-        const added = sh.addRow(rowObj);
-        // Styling
-        const excelRow = added.number;
-        styleRow(sh, excelRow);
-        // Formats per row
-        cols.forEach((c, i) => {
-            const colIndex = i + 1;
-            if (c.kind === 'date') {
-                sh.getCell(excelRow, colIndex).numFmt = 'yyyy-mm-dd';
-            }
-            if (c.kind === 'moneyOrig') {
-                const fmt = safeNumFmt(r.currency || baseCurrency);
-                sh.getCell(excelRow, colIndex).numFmt = fmt;
-            }
-            if (c.kind === 'moneyBase') {
-                sh.getCell(excelRow, colIndex).numFmt = baseMoneyFmt;
-            }
-            if (c.kind === 'qty') {
-                sh.getCell(excelRow, colIndex).numFmt = '#,##0.00';
-            }
-            if (c.kind === 'number') {
-                sh.getCell(excelRow, colIndex).numFmt = '0.########';
-            }
-        });
-        // Highlight FX missing rows
-        if (String(r.fxStatus) === 'MISSING') {
-            const fxCols = cols
-                .map((c, i) => ({ c, i: i + 1 }))
-                .filter(x => ['fxEnteredRate', 'fxRateToBase', 'amountBase', 'debitBase', 'creditBase', 'runningBase'].includes(x.c.key))
-                .map(x => x.i);
-            markFxMissing(sh, excelRow, fxCols);
+    });
+    // --- Data Rows ---
+    if (rows.length === 0) {
+        const colsCount = columns.length;
+        if (colsCount > 0) {
+            sh.mergeCells(7, 1, 7, colsCount);
+            const noDataCell = sh.getCell(7, 1);
+            noDataCell.value = t(locale, 'noData');
+            noDataCell.alignment = { horizontal: 'center', vertical: 'middle' };
+            noDataCell.font = { italic: true, color: { argb: 'FF6B7280' } };
         }
-    });
-    // Filter + autosize
+    }
+    else {
+        rows.forEach((r) => {
+            const rowObj = {};
+            columns.forEach(c => {
+                rowObj[c.dataKey] = getRowValue(r, c.dataKey);
+            });
+            const addedRow = sh.addRow(rowObj);
+            addedRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const colDef = columns[colNumber - 1];
+                if (!colDef)
+                    return;
+                cell.alignment = { vertical: 'middle', horizontal: colDef.align || 'left', wrapText: true };
+                if (colDef.kind === 'date')
+                    cell.numFmt = 'yyyy-mm-dd';
+                if (colDef.kind === 'moneyOrig')
+                    cell.numFmt = safeNumFmt(r.currency || baseCurrency);
+                if (colDef.kind === 'moneyBase')
+                    cell.numFmt = safeNumFmt(baseCurrency);
+                if (colDef.kind === 'qty')
+                    cell.numFmt = '#,##0.00';
+                if (colDef.kind === 'number' && typeof cell.value === 'number')
+                    cell.numFmt = '0.00####';
+                if (r.fxStatus === 'MISSING' && ['moneyBase', 'runningBase'].includes(colDef.kind)) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
+                    cell.font = { color: { argb: 'FF991B1B' } };
+                }
+            });
+        });
+    }
     sh.autoFilter = {
-        from: { row: 1, column: 1 },
-        to: { row: 1, column: cols.length },
+        from: { row: 6, column: 1 },
+        to: { row: 6, column: columns.length },
     };
-    autoWidth(sh);
-    // ===== Summary sheet (keep yours, only small polish) =====
-    const shSummary = wb.addWorksheet('Summary', { views: [{ showGridLines: false }] });
-    shSummary.columns = [
-        { header: '', key: 'k', width: 22 },
-        { header: '', key: 'v', width: 46 },
-    ];
-    shSummary.mergeCells('A1:B1');
-    shSummary.getCell('A1').value = summary.title;
-    shSummary.getCell('A1').font = { size: 16, bold: true };
-    shSummary.getCell('A2').value = 'Export version: 2026-02-07-v3';
-    shSummary.getCell('A3').value = 'Entity';
-    shSummary.getCell('B3').value = summary.entityLabel;
-    shSummary.getCell('A4').value = 'Period';
-    shSummary.getCell('B4').value =
-        `${summary.periodFrom.toISOString().slice(0, 10)} → ${summary.periodTo.toISOString().slice(0, 10)}`;
-    shSummary.getCell('A5').value = 'Base Currency';
-    shSummary.getCell('B5').value = String(summary.baseCurrency);
-    const baseFmt = safeNumFmt(baseCurrency);
-    shSummary.getCell('A7').value = 'Opening';
-    shSummary.getCell('B7').value = summary.openingBase;
-    shSummary.getCell('B7').numFmt = baseFmt;
-    shSummary.getCell('A8').value = 'Total Debit';
-    shSummary.getCell('B8').value = summary.totalDebitBase;
-    shSummary.getCell('B8').numFmt = baseFmt;
-    shSummary.getCell('A9').value = 'Total Credit';
-    shSummary.getCell('B9').value = summary.totalCreditBase;
-    shSummary.getCell('B9').numFmt = baseFmt;
-    shSummary.getCell('A10').value = 'Closing';
-    shSummary.getCell('B10').value = summary.closingBase;
-    shSummary.getCell('B10').numFmt = baseFmt;
-    shSummary.getCell('A12').value = 'Warnings';
-    shSummary.getCell('B12').value = ((_a = summary.warnings) === null || _a === void 0 ? void 0 : _a.length) ? summary.warnings.join('\n') : '—';
-    shSummary.getCell('B12').alignment = { wrapText: true };
-    // Totals by original currency
-    let r0 = 14;
-    shSummary.getCell(`A${r0}`).value = 'Totals by currency (original)';
-    shSummary.getCell(`A${r0}`).font = { bold: true };
-    r0++;
-    shSummary.getCell(`A${r0}`).value = 'Currency';
-    shSummary.getCell(`B${r0}`).value = 'Debit';
-    shSummary.getCell(`C${r0}`).value = 'Credit';
-    shSummary.getRow(r0).font = { bold: true };
-    r0++;
-    Object.entries(summary.totalsByCurrencyOrig || {}).forEach(([cur, t]) => {
-        shSummary.getCell(`A${r0}`).value = cur;
-        shSummary.getCell(`B${r0}`).value = t.debit;
-        shSummary.getCell(`C${r0}`).value = t.credit;
-        const fmt = safeNumFmt(cur);
-        shSummary.getCell(`B${r0}`).numFmt = fmt;
-        shSummary.getCell(`C${r0}`).numFmt = fmt;
-        r0++;
-    });
     const buf = await wb.xlsx.writeBuffer();
     return Buffer.from(buf);
 }

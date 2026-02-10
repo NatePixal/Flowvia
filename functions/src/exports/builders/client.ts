@@ -177,6 +177,7 @@ export async function buildClientStatement(params: {
       debitBase,
       creditBase,
       runningBase,
+      meta: { items: Array.isArray(e.items) ? e.items : null }
     });
   }
 

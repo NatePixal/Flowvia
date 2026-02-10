@@ -103,6 +103,14 @@ export async function buildProductMovementStatement(params: {
       debitBase: qtyIn,
       creditBase: qtyOut,
       runningBase: runningQty,
+      meta: {
+        productCode,
+        productName,
+        category: productData.category || productData.catagory || '',
+        currency: productData.purchasePriceCurrency || '',
+        purchasePrice: productData.purchasePrice ?? productData.buyPrice ?? null,
+        sellingPrice: productData.sellingPrice ?? productData.sellPrice ?? null,
+      }
     });
   }
 

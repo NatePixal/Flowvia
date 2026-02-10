@@ -156,6 +156,7 @@ export async function buildSupplierStatement(params: {
       debitBase,
       creditBase,
       runningBase,
+      meta: { items: Array.isArray(e.items) ? e.items : null }
     });
   }
   
