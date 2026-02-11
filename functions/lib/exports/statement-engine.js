@@ -755,9 +755,6 @@ async function buildStatementWorkbook(params) {
     // Summary sheet
     buildSummarySheet(wb, summary, baseCurrency, locale);
     const buf = await wb.xlsx.writeBuffer();
-    if (!buf || buf.byteLength === 0) {
-        throw new Error('Workbook buffer is empty.');
-    }
     return Buffer.from(buf);
 }
 //# sourceMappingURL=statement-engine.js.map

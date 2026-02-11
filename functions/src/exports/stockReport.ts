@@ -1,4 +1,4 @@
-
+// functions/src/exports/stockReport.ts
 import * as admin from "firebase-admin";
 import * as ExcelJS from "exceljs";
 import {
@@ -61,6 +61,7 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
         h_avg_price: "Avg Sell Price",
         h_date: "Date",
         h_units_sold: "Units Sold",
+        h_products_sold: "Products Sold",
     },
     ru: {
         sheet_summary: "Сводка по складу",
@@ -85,6 +86,7 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
         h_avg_price: "Средняя цена продажи",
         h_date: "Дата",
         h_units_sold: "Продано (шт.)",
+        h_products_sold: "Проданные товары",
     },
     uz: {
         sheet_summary: "Omborxona xulosasi",
@@ -109,6 +111,7 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
         h_avg_price: "O'rtacha sotish narxi",
         h_date: "Sana",
         h_units_sold: "Sotilgan (dona)",
+        h_products_sold: "Sotilgan mahsulotlar",
     },
     ar: {
         sheet_summary: "ملخص المخزون",
@@ -133,6 +136,7 @@ const TRANSLATIONS: Record<string, Record<string, string>> = {
         h_avg_price: "متوسط سعر البيع",
         h_date: "التاريخ",
         h_units_sold: "الوحدات المباعة",
+        h_products_sold: "المنتجات المباعة",
     }
 };
 
@@ -189,7 +193,8 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     if (!code) continue;
     const q = Number(x.quantity ?? 0);
     get(code).incomingAll += q;
-    const ms = anyToMillis(x.incomeDate ?? x.date);
+    const dt = x.incomeDate ?? x.date;
+    const ms = anyToMillis(dt);
     if (ms != null) {
       if (ms < range.from.getTime()) get(code).incomingBefore += q;
       if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) get(code).incomingRange += q;
@@ -197,37 +202,51 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
   }
 
   const salesAllSnap = await db.collection("companies").doc(input.companyId).collection("sales").get();
-  const salesByDay = new Map<string, { units: number; revenueMinor: number; profitMinor: number }>();
+  const salesByDay = new Map<
+    string,
+    { units: number; revenueMinor: number; profitMinor: number; products: Map<string, number> }
+  >();
+
   for (const d of salesAllSnap.docs) {
     const s = d.data();
     const code = String(s.productCode ?? "");
     if (!code) continue;
     const q = Number(s.quantity ?? 0);
     get(code).soldAll += q;
-    const ms = anyToMillis(s.date);
+    const dt = s.date;
+    const ms = anyToMillis(dt);
     if (ms != null) {
       if (ms < range.from.getTime()) get(code).soldBefore += q;
       if (ms >= range.from.getTime() && ms < range.toExclusive.getTime()) {
         get(code).soldRange += q;
         get(code).revenueRangeBaseMinor += Number(s.revenueBaseMinor ?? 0);
         get(code).profitRangeBaseMinor += Number(s.grossProfitBaseMinor ?? 0);
-        const day = anyToISODate(s.date);
-        if (!salesByDay.has(day)) salesByDay.set(day, { units: 0, revenueMinor: 0, profitMinor: 0 });
+        
+        const day = anyToISODate(dt);
+        if (!salesByDay.has(day)) {
+          salesByDay.set(day, { units: 0, revenueMinor: 0, profitMinor: 0, products: new Map() });
+        }
         const bucket = salesByDay.get(day)!;
+
         bucket.units += q;
         bucket.revenueMinor += Number(s.revenueBaseMinor ?? 0);
         bucket.profitMinor += Number(s.grossProfitBaseMinor ?? 0);
+        bucket.products.set(code, (bucket.products.get(code) || 0) + q);
       }
     }
   }
   
+  const productNameByCode = new Map<string, string>();
   const productsByCode = new Map<string, Product>();
   try {
     const prodSnap = await db.collection("companies").doc(input.companyId).collection("products").get();
     for (const d of prodSnap.docs) {
         const p = d.data() as Product;
         const code = String(p.productCode ?? p.id ?? "");
-        if (code) productsByCode.set(code, p);
+        if (code) {
+            productsByCode.set(code, p);
+            productNameByCode.set(code, p.name);
+        }
     }
   } catch { /* ignore */ }
   
@@ -237,7 +256,7 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     const onHandToday = a.incomingAll - a.soldAll;
     const remainingQty = input.stockMode === "range" ? closing : onHandToday;
 
-    const productDoc: any = productsByCode.get(a.productCode);
+    const productDoc = productsByCode.get(a.productCode);
     let priceOrigin: number | string = "";
     if (productDoc) {
       const p: any = productDoc;
@@ -251,19 +270,19 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     }
     if (priceOrigin === "" && a.soldRange > 0 && a.revenueRangeBaseMinor > 0) {
         const costOfGoodsSold = a.revenueRangeBaseMinor - a.profitRangeBaseMinor;
-        priceOrigin = (costOfGoodsSold / 100) / a.soldRange;
+        priceOrigin = minorToMajor(costOfGoodsSold, input.baseCurrency) / a.soldRange;
     }
 
     return {
       code: a.productCode,
-      name: productDoc?.name ?? "",
+      name: productNameByCode.get(a.productCode) ?? "",
       opening,
       incoming: a.incomingRange,
       sold: a.soldRange,
       remainingQty,
       priceOrigin,
-      revenue: a.revenueRangeBaseMinor / 100,
-      profit: a.profitRangeBaseMinor / 100,
+      revenue: a.revenueRangeBaseMinor,
+      profit: a.profitRangeBaseMinor,
     };
   });
 
@@ -271,7 +290,7 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
   applyGlobalWorkbookStyle(wb);
   const isRTL = locale === 'ar';
 
-  // ===== Sheet 1: Stock Summary
+  // ===== Sheet 1: Stock Summary =====
   const ws = wb.addWorksheet(t(locale, 'sheet_summary'));
   if (isRTL) ws.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws);
@@ -279,7 +298,7 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
       { width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 13 },
       { width: 13 }, { width: 16 }, { width: 13 }, { width: 16 }, { width: 13 },
   ];
-  styleTitle(ws, t(locale, 'title_summary'), "FlowVia Business Solutions");
+  styleTitle(ws, t(locale, 'title_summary'), t(locale, 'company'));
   if (isRTL) { ws.getCell('B2').alignment = { horizontal: 'right' }; ws.getCell('B3').alignment = { horizontal: 'right' }; }
   styleInfoRow(ws, 5, t(locale, 'info_mode'), input.stockMode);
   styleInfoRow(ws, 6, t(locale, 'info_currency'), input.baseCurrency);
@@ -294,7 +313,7 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
 
   let r1 = hr1 + 1;
   for (const x of rows) {
-    ws.getRow(r1).values = ["", x.code, x.name, input.stockMode === "asOfToday" ? "" : x.opening, input.stockMode === "asOfToday" ? "" : x.incoming, input.stockMode === "asOfToday" ? "" : x.sold, x.remainingQty, x.priceOrigin, x.revenue, x.profit];
+    ws.getRow(r1).values = ["", x.code, x.name, input.stockMode === "asOfToday" ? "" : x.opening, input.stockMode === "asOfToday" ? "" : x.incoming, input.stockMode === "asOfToday" ? "" : x.sold, x.remainingQty, x.priceOrigin, minorToMajor(x.revenue, input.baseCurrency), minorToMajor(x.profit, input.baseCurrency)];
     styleTableBodyRow(ws, r1, 2, 10);
     ws.getRow(r1).getCell(4).numFmt = "#,##0.00";
     ws.getRow(r1).getCell(5).numFmt = "#,##0.00";
@@ -306,12 +325,12 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     r1++;
   }
 
-  // ===== Sheet 2: Demand
+  // ===== Sheet 2: Demand =====
   const ws2 = wb.addWorksheet(t(locale, 'sheet_demand'));
   if (isRTL) ws2.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws2);
   ws2.columns = [{ width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 16 }, { width: 23.4 }, { width: 18.3 }, { width: 16 }];
-  styleTitle(ws2, t(locale, 'title_demand'), "FlowVia Business Solutions");
+  styleTitle(ws2, t(locale, 'title_demand'), t(locale, 'company'));
   if (isRTL) { ws2.getCell('B2').alignment = { horizontal: 'right' }; ws2.getCell('B3').alignment = { horizontal: 'right' }; }
   styleInfoRow(ws2, 5, t(locale, 'info_period'), `From ${input.from} to ${input.to}`);
   if (isRTL) { ws2.getCell('B5').alignment = { horizontal: 'right' }; }
@@ -325,9 +344,11 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
   let r2 = hr2 + 1;
   const demand = [...rows].sort((a, b) => (b.sold - a.sold));
   for (const x of demand) {
-    const gpPct = x.revenue > 0 ? x.profit / x.revenue : 0;
-    const avgSellPrice = x.sold > 0 ? x.revenue / x.sold : 0;
-    ws2.getRow(r2).values = ["", x.code, x.name, x.sold, x.revenue, x.profit, gpPct, avgSellPrice];
+    const revenue = minorToMajor(x.revenue, input.baseCurrency);
+    const profit = minorToMajor(x.profit, input.baseCurrency);
+    const gpPct = revenue > 0 ? profit / revenue : 0;
+    const avgSellPrice = x.sold > 0 ? revenue / x.sold : 0;
+    ws2.getRow(r2).values = ["", x.code, x.name, x.sold, revenue, profit, gpPct, avgSellPrice];
     styleTableBodyRow(ws2, r2, 2, 8);
     ws2.getRow(r2).getCell(5).numFmt = "#,##0.00";
     ws2.getRow(r2).getCell(6).numFmt = "#,##0.00";
@@ -336,36 +357,43 @@ export async function exportStockReportExcel(input: ExportStockInput): Promise<B
     r2++;
   }
 
-  // ===== Sheet 3: Sales by Day
+  // ===== Sheet 3: Sales by Day =====
   const ws3 = wb.addWorksheet(t(locale, 'sheet_daily'));
   if (isRTL) ws3.views = [{ rightToLeft: true }];
   setSheetPrintDefaults(ws3);
-  ws3.columns = [{ width: 2 }, { width: 14 }, { width: 12 }, { width: 22 }, { width: 16 }, { width: 23.1 }, { width: 19.4 }];
-  styleTitle(ws3, t(locale, 'title_daily'), "FlowVia Business Solutions");
+  ws3.columns = [{ width: 2 }, { width: 14 }, { width: 12 }, { width: 22 }, { width: 16 }, { width: 23 }, { width: 19 }, { width: 44 }];
+  styleTitle(ws3, t(locale, 'title_daily'), t(locale, 'company'));
   if (isRTL) { ws3.getCell('B2').alignment = { horizontal: 'right' }; ws3.getCell('B3').alignment = { horizontal: 'right' }; }
   styleInfoRow(ws3, 5, t(locale, 'info_period'), `From ${input.from} to ${input.to}`);
   if (isRTL) { ws3.getCell('B5').alignment = { horizontal: 'right' }; }
 
   const hr3 = 12;
-  ws3.getRow(hr3).values = ["", t(locale, 'h_date'), t(locale, 'h_units_sold'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct')];
-  styleTableHeader(ws3, hr3, 2, 7);
-  ws3.autoFilter = { from: { row: hr3, column: 2 }, to: { row: hr3, column: 7 }};
+  ws3.getRow(hr3).values = ["", t(locale, 'h_date'), t(locale, 'h_units_sold'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct'), t(locale, 'h_products_sold')];
+  styleTableHeader(ws3, hr3, 2, 8);
+  ws3.autoFilter = { from: { row: hr3, column: 2 }, to: { row: hr3, column: 8 }};
   (ws3 as any).views = [{ state: 'frozen', ySplit: hr3, rightToLeft: isRTL }];
 
   let r3 = hr3 + 1;
   const daily = Array.from(salesByDay.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([day, v]) => ({ day, ...v }));
   for (const d of daily) {
     const units = d.units;
-    const revenue = d.revenueMinor / 100;
-    const profit = d.profitMinor / 100;
-    const costPerUnit = units > 0 ? (revenue - profit) / units : 0;
+    const revenue = minorToMajor(d.revenueMinor, input.baseCurrency);
+    const profit = minorToMajor(d.profitMinor, input.baseCurrency);
+    const priceOrigin = units > 0 ? (revenue - profit) / units : 0;
     const gpPct = revenue > 0 ? profit / revenue : 0;
-    ws3.getRow(r3).values = ["", d.day, units, costPerUnit, revenue, profit, gpPct];
-    styleTableBodyRow(ws3, r3, 2, 7);
+    
+    const productsSold = Array.from(d.products.entries())
+      .sort((a, b) => b[1] - a[1]) // sort by qty desc
+      .map(([code, qty]) => `${productNameByCode.get(code) ?? code} (${qty})`)
+      .join(', ');
+
+    ws3.getRow(r3).values = ["", d.day, units, priceOrigin, revenue, profit, gpPct, productsSold];
+    styleTableBodyRow(ws3, r3, 2, 8);
     ws3.getRow(r3).getCell(4).numFmt = "#,##0.00";
     ws3.getRow(r3).getCell(5).numFmt = "#,##0.00";
     ws3.getRow(r3).getCell(6).numFmt = "#,##0.00";
     ws3.getRow(r3).getCell(7).numFmt = "0.00%";
+    ws3.getRow(r3).getCell(8).alignment = { wrapText: true, vertical: 'top' };
     r3++;
   }
 

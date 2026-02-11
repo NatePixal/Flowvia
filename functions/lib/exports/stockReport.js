@@ -252,7 +252,7 @@ async function exportStockReportExcel(input) {
         { width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 13 },
         { width: 13 }, { width: 16 }, { width: 13 }, { width: 16 }, { width: 13 },
     ];
-    (0, exportUtils_1.styleTitle)(ws, t(locale, 'company'), t(locale, 'title_summary'));
+    (0, exportUtils_1.styleTitle)(ws, t(locale, 'title_summary'), "FlowVia Business Solutions");
     if (isRTL) {
         ws.getCell('B2').alignment = { horizontal: 'right' };
         ws.getCell('B3').alignment = { horizontal: 'right' };
@@ -268,6 +268,8 @@ async function exportStockReportExcel(input) {
     const hr1 = 12;
     ws.getRow(hr1).values = ["", t(locale, 'h_prod_code'), t(locale, 'h_prod_name'), t(locale, 'h_opening'), t(locale, 'h_incoming'), t(locale, 'h_sold'), t(locale, 'h_remaining'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit')];
     (0, exportUtils_1.styleTableHeader)(ws, hr1, 2, 10);
+    ws.autoFilter = { from: { row: hr1, column: 2 }, to: { row: hr1, column: 10 } };
+    ws.views = [{ state: 'frozen', ySplit: hr1, rightToLeft: isRTL }];
     let r1 = hr1 + 1;
     for (const x of rows) {
         ws.getRow(r1).values = ["", x.code, x.name, input.stockMode === "asOfToday" ? "" : x.opening, input.stockMode === "asOfToday" ? "" : x.incoming, input.stockMode === "asOfToday" ? "" : x.sold, x.remainingQty, x.priceOrigin, x.revenue, x.profit];
@@ -287,7 +289,7 @@ async function exportStockReportExcel(input) {
         ws2.views = [{ rightToLeft: true }];
     (0, exportUtils_1.setSheetPrintDefaults)(ws2);
     ws2.columns = [{ width: 2 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 16 }, { width: 23.4 }, { width: 18.3 }, { width: 16 }];
-    (0, exportUtils_1.styleTitle)(ws2, t(locale, 'company'), t(locale, 'title_demand'));
+    (0, exportUtils_1.styleTitle)(ws2, t(locale, 'title_demand'), "FlowVia Business Solutions");
     if (isRTL) {
         ws2.getCell('B2').alignment = { horizontal: 'right' };
         ws2.getCell('B3').alignment = { horizontal: 'right' };
@@ -299,6 +301,8 @@ async function exportStockReportExcel(input) {
     const hr2 = 12;
     ws2.getRow(hr2).values = ["", t(locale, 'h_prod_code'), t(locale, 'h_prod_name'), t(locale, 'h_units_sold'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct'), t(locale, 'h_avg_price')];
     (0, exportUtils_1.styleTableHeader)(ws2, hr2, 2, 8);
+    ws2.autoFilter = { from: { row: hr2, column: 2 }, to: { row: hr2, column: 8 } };
+    ws2.views = [{ state: 'frozen', ySplit: hr2, rightToLeft: isRTL }];
     let r2 = hr2 + 1;
     const demand = [...rows].sort((a, b) => (b.sold - a.sold));
     for (const x of demand) {
@@ -318,7 +322,7 @@ async function exportStockReportExcel(input) {
         ws3.views = [{ rightToLeft: true }];
     (0, exportUtils_1.setSheetPrintDefaults)(ws3);
     ws3.columns = [{ width: 2 }, { width: 14 }, { width: 12 }, { width: 22 }, { width: 16 }, { width: 23.1 }, { width: 19.4 }];
-    (0, exportUtils_1.styleTitle)(ws3, t(locale, 'company'), t(locale, 'title_daily'));
+    (0, exportUtils_1.styleTitle)(ws3, t(locale, 'title_daily'), "FlowVia Business Solutions");
     if (isRTL) {
         ws3.getCell('B2').alignment = { horizontal: 'right' };
         ws3.getCell('B3').alignment = { horizontal: 'right' };
@@ -330,6 +334,8 @@ async function exportStockReportExcel(input) {
     const hr3 = 12;
     ws3.getRow(hr3).values = ["", t(locale, 'h_date'), t(locale, 'h_units_sold'), t(locale, 'h_origin_price'), t(locale, 'h_revenue'), t(locale, 'h_profit'), t(locale, 'h_profit_pct')];
     (0, exportUtils_1.styleTableHeader)(ws3, hr3, 2, 7);
+    ws3.autoFilter = { from: { row: hr3, column: 2 }, to: { row: hr3, column: 7 } };
+    ws3.views = [{ state: 'frozen', ySplit: hr3, rightToLeft: isRTL }];
     let r3 = hr3 + 1;
     const daily = Array.from(salesByDay.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([day, v]) => (Object.assign({ day }, v)));
     for (const d of daily) {
