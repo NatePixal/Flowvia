@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app, auth, db } from './client';
@@ -157,6 +157,45 @@ export function FirebaseProvider({
     }
     await fetchUserContext(currentUser);
   }, [authInstance, fetchUserContext]);
+  
+  // Inactivity timeout effect
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) {
+      return;
+    }
+
+    let activityTimeout: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      clearTimeout(activityTimeout);
+      activityTimeout = setTimeout(() => {
+        signOut(authInstance).catch(error => {
+          console.error("Error signing out due to inactivity:", error);
+        });
+      }, 15 * 60 * 1000); // 15 minutes
+    };
+
+    const activityEvents: (keyof WindowEventMap)[] = [
+      'mousemove',
+      'keydown',
+      'click',
+      'scroll',
+      'touchstart',
+    ];
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(activityTimeout);
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [user, authInstance]);
   
   const companyId = (claims?.companyId as string | undefined) ?? null;
   const role = (claims?.role as UserRole | undefined) ?? null;
