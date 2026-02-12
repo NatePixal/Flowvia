@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { Calendar } from '../ui/calendar';
+import { normalizeProductCode } from '@/lib/normalize';
 
 interface AddIncomingProductDialogProps {
   open: boolean;
@@ -116,9 +118,9 @@ export default function AddIncomingProductDialog({
   );
 
   const handleProductCodeChange = (code: string) => {
-    const uppercaseCode = code.toUpperCase();
-    setProductCode(uppercaseCode);
-    debouncedLookup(uppercaseCode);
+    const normalizedCode = normalizeProductCode(code);
+    setProductCode(normalizedCode);
+    debouncedLookup(normalizedCode);
   };
 
   const handleSubmit = () => {
@@ -163,7 +165,7 @@ export default function AddIncomingProductDialog({
     }
 
     onAddIncomingProduct({
-      productCode: productCode.toUpperCase(),
+      productCode: productCode,
       quantity: qty,
       supplier,
       unitCost: cost,

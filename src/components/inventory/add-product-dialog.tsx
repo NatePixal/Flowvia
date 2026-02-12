@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -18,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { exchangeRates } from '@/lib/currency-provider';
+import { normalizeProductCode } from '@/lib/normalize';
 
 interface AddProductDialogProps {
   open: boolean;
@@ -52,7 +54,8 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
 
 
   const handleSubmit = () => {
-    if (!productCode || !name || !purchasePriceCurrency || !sellingPriceCurrency) {
+    const code = normalizeProductCode(productCode);
+    if (!code || !name || !purchasePriceCurrency || !sellingPriceCurrency) {
         toast({
             variant: "destructive",
             title: t('toast.error.missingFields'),
@@ -69,7 +72,7 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
 
     const productData = { 
       name, 
-      productCode,
+      productCode: code,
       category,
       supplier: supplier || '',
       quantity: parseInt(quantity, 10) || 0,
@@ -126,7 +129,7 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2 col-span-2 sm:col-span-1">
               <Label htmlFor="productCode">{t('inventory.productCode')} <span className="text-destructive">*</span></Label>
-              <Input id="productCode" value={productCode} onChange={(e) => setProductCode(e.target.value)} />
+              <Input id="productCode" value={productCode} onChange={(e) => setProductCode(normalizeProductCode(e.target.value))} />
             </div>
             <div className="space-y-2 col-span-2 sm:col-span-1">
               <Label htmlFor="name">{t('inventory.productName')} <span className="text-destructive">*</span></Label>
