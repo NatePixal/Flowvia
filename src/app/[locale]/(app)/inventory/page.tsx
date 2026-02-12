@@ -30,6 +30,7 @@ import { hasPermission } from '@/lib/permissions';
 import { FancyCard } from '@/components/ui/fancy-card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { normalizeProductCode } from '@/lib/normalize';
 
 type SortKey = 'createdAt' | 'name' | 'quantity' | 'category';
 
@@ -125,7 +126,8 @@ export default function InventoryPage() {
       });
       return;
     }
-    if (!productData.productCode) {
+    const code = normalizeProductCode(productData.productCode);
+    if (!code) {
       toast({
         variant: 'destructive',
         title: t('toast.error.title'),
@@ -136,10 +138,10 @@ export default function InventoryPage() {
 
     try {
       const productsCol = companyCollection(firestore, companyId, 'products');
-      const productRef = doc(productsCol, productData.productCode);
+      const productRef = doc(productsCol, code);
 
       const payload = {
-        ...withCompanyId(companyId, productData),
+        ...withCompanyId(companyId, { ...productData, productCode: code }),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -397,9 +399,9 @@ export default function InventoryPage() {
                             <TableCell className="text-right">{formatMoneyMinor(toMinor(product.purchasePrice, product.purchasePriceCurrency as Currency), product.purchasePriceCurrency as Currency)}</TableCell>
                             <TableCell className="text-center">
                                 {product.quantity > (product.minStock || 0) ? 
-                                  <Badge variant="secondary" className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">{t('status.inStock')}</Badge> :
+                                  <Badge variant="success">{t('status.inStock')}</Badge> :
                                   product.quantity > 0 ?
-                                  <Badge variant="destructive">{t('status.lowStock')}</Badge> :
+                                  <Badge variant="warning">{t('status.lowStock')}</Badge> :
                                   <Badge variant="destructive">{t('status.outOfStock')}</Badge>
                                 }
                             </TableCell>
