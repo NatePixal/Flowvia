@@ -1,4 +1,4 @@
-// This file is intentionally left blank to resolve a Next.js routing conflict.
-// The correct inventory page is located at /src/app/[locale]/(app)/inventory/page.tsx,
-// which is part of the main application layout. This file created a parallel route
-// to the same path, which caused a build error. It is now neutralized.
+// This file is intentionally left empty.
+// The inventory page logic is now handled exclusively by `src/app/[locale]/(app)/inventory/page.tsx`
+// to resolve a Next.js parallel route build error.
+// Keeping this file empty prevents the build conflict.

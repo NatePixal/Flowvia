@@ -508,6 +508,7 @@ export default function Page({ params }: { params: { locale: string } }) {
               <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] mb-8 text-foreground">
                 <Trans
                   i18nKey="lp.hero.title"
+                  defaults="The Ultimate<1>Business <2>Command Center</2></1>"
                   components={{
                     br: <br />,
                     highlight: <span className="text-primary" />,
@@ -516,7 +517,10 @@ export default function Page({ params }: { params: { locale: string } }) {
               </h1>
 
               <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
-                {t('lp.hero.subtitle')}
+                {t(
+                  'lp.hero.subtitle',
+                  'FlowVia is a powerful, all-in-one ERP to manage inventory, track sales, log expenses, and handle client loans. Your complete business OS.'
+                )}
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-5">

@@ -26,22 +26,26 @@ const COOKIE_NAME = 'NEXT_LOCALE';
 export function middleware(request: NextRequest) {
   // 1. WWW to Apex domain redirection
   const host = request.headers.get("host") || "";
-  if (host.toLowerCase() === "www.flowvia.live") {
-    const targetUrl = new URL(request.url);
-    targetUrl.host = "flowvia.live";
-    return NextResponse.redirect(targetUrl, 308); // 308 is a permanent redirect
+  if (host.toLowerCase().startsWith("www.")) {
+    const newHost = host.replace("www.", "");
+    const newUrl = new URL(request.url);
+    newUrl.host = newHost;
+    const response = NextResponse.redirect(newUrl, 308); // 308 is a permanent redirect
+    // Apply HSTS header to redirect response
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    return response;
   }
 
   // 2. Locale Redirection
   const { pathname } = request.nextUrl;
-
-  // Check if the pathname already has a locale prefix.
   const pathnameHasLocale = locales.some(
     (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`
   );
 
   if (pathnameHasLocale) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    return response;
   }
 
   // If no locale, redirect to the preferred or fallback locale.
@@ -49,6 +53,8 @@ export function middleware(request: NextRequest) {
   const localeToUse: Locale =
     preferredLocale && isLocale(preferredLocale) ? preferredLocale : fallbackLng;
 
-  request.nextUrl.pathname = `/${localeToUse}${pathname}`;
-  return NextResponse.redirect(request.nextUrl);
+  const newUrl = new URL(`/${localeToUse}${pathname}`, request.url);
+  const response = NextResponse.redirect(newUrl);
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  return response;
 }

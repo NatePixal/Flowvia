@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://flowvia.live/en</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/ru</loc>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/ar</loc>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/uz</loc>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/en/login</loc>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/ru/login</loc>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/ar/login</loc>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://flowvia.live/uz/login</loc>
+    <priority>0.7</priority>
+  </url>
+</urlset>
