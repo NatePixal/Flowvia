@@ -4,7 +4,7 @@ import Script from 'next/script';
 
 export function GoogleAnalytics() {
   // IMPORTANT: Replace this with your actual GA4 Measurement ID
-  const measurementId = 'G-XXXXXXXXXX'; 
+  const measurementId = 'G-M34SXZ5VP6'; 
 
   // Don't render the script if no ID is provided or in non-production environments
   if (process.env.NODE_ENV !== 'production' || measurementId === 'G-XXXXXXXXXX') {
