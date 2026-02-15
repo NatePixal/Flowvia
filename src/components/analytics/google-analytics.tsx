@@ -1,3 +1,4 @@
+
 'use client';
 
 import Script from 'next/script';
@@ -6,8 +7,8 @@ export function GoogleAnalytics() {
   // IMPORTANT: Replace this with your actual GA4 Measurement ID
   const measurementId = 'G-M34SXZ5VP6'; 
 
-  // Don't render the script if no ID is provided or in non-production environments
-  if (process.env.NODE_ENV !== 'production' || measurementId === 'G-XXXXXXXXXX') {
+  // Don't render the script if in non-production environments
+  if (process.env.NODE_ENV !== 'production') {
     return null;
   }
 
