@@ -14,6 +14,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ROLE_ACCESS } from '@/lib/roles';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { z } from 'zod';
 
 export default function InviteUsersPage() {
     const { t } = useTranslation();
@@ -28,25 +29,40 @@ export default function InviteUsersPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [result, setResult] = useState<{success: boolean, message: string} | null>(null);
 
+    const availableRoles = Object.keys(ROLE_ACCESS).filter(r => r !== 'developer');
+
+    const inviteSchema = z.object({
+      name: z.string().min(2, "Full name must be at least 2 characters long."),
+      email: z.string().email("Please enter a valid email address."),
+      password: z.string().min(8, "Password must be at least 8 characters long."),
+      role: z.string().refine(val => availableRoles.includes(val), { message: "Please select a valid role." }),
+    });
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setResult(null);
+
+        const validationResult = inviteSchema.safeParse({ name, email, password, role });
+        if (!validationResult.success) {
+            const errorMessages = validationResult.error.errors.map(e => e.message).join('\n');
+            setResult({ success: false, message: errorMessages });
+            toast({ variant: 'destructive', title: t('toast.error.validationFailed'), description: errorMessages });
+            return;
+        }
+
         if (!userProfile?.companyId) {
             toast({ variant: 'destructive', title: t('toast.error.title'), description: t('toast.error.companyIdMissingError') });
             return;
         }
 
         setIsLoading(true);
-        setResult(null);
 
         const functions = getFunctions(firebaseApp, 'us-central1');
         const inviteUser = httpsCallable(functions, 'inviteUserToCompany');
 
         try {
             await inviteUser({
-                name,
-                email,
-                password,
-                role,
+                ...validationResult.data,
                 companyId: userProfile.companyId,
             });
             setResult({ success: true, message: t('inviteUsers.userInvitedSuccessfully')});
@@ -76,8 +92,6 @@ export default function InviteUsersPage() {
             </div>
         )
     }
-    
-    const availableRoles = Object.keys(ROLE_ACCESS).filter(r => r !== 'developer');
 
     return (
         <div className="flex flex-col gap-6">
@@ -124,7 +138,7 @@ export default function InviteUsersPage() {
                             <Alert variant={result.success ? 'default' : 'destructive'}>
                                 {result.success ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
                                 <AlertTitle>{result.success ? t('toast.success.title') : t('toast.error.title')}</AlertTitle>
-                                <AlertDescription>{result.message}</AlertDescription>
+                                <AlertDescription className="whitespace-pre-wrap">{result.message}</AlertDescription>
                             </Alert>
                         )}
                     </CardContent>

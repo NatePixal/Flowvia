@@ -61,13 +61,42 @@ service cloud.firestore {
     }
     
     match /users/{userId} {
-      allow get: if isDeveloper() || isRequestingOwnData(userId) || (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
-      allow create: if isDeveloper() || isRequestingOwnData(userId) || (isAdmin() && request.resource.data.companyId == getCompanyId());
-      allow update: if isDeveloper() || 
-                       (isRequestingOwnData(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'companyId', 'status', 'isPaid'])) || 
-                       (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
+
+      function sameCompanyExisting() {
+        return getCompanyId() != null && resource.data.companyId == getCompanyId();
+      }
+
+      function sameCompanyIncoming() {
+        return getCompanyId() != null && request.resource.data.companyId == getCompanyId();
+      }
+
+      // Read a single user profile
+      allow get: if isDeveloper()
+                || isRequestingOwnData(userId)
+                || (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
+
+      // List/query users
+      // NOTE: Your admin queries MUST include: .where("companyId", "==", user.companyId)
+      // This rule is intentionally broad because Firestore rules are not filters.
+      // The client MUST apply the where clause for security to be effective.
       allow list: if isDeveloper() || isAdmin();
-      // Deletion of users should be handled by a backend process
+
+      // Create a user profile
+      allow create: if isDeveloper()
+                   || (isAdmin() && sameCompanyIncoming())
+                   || (isRequestingOwnData(userId) && sameCompanyIncoming());
+
+      // Update a user profile
+      allow update: if isDeveloper()
+                   || (isRequestingOwnData(userId)
+                       && !request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasAny(['role', 'companyId', 'status', 'isPaid']))
+                   || (isAdmin()
+                       && sameCompanyExisting()
+                       && request.resource.data.companyId == resource.data.companyId);
+
+      // Deletion should be backend-only
       allow delete: if false;
     }
   }
