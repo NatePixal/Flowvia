@@ -1,6 +1,6 @@
 
 import { Currency } from "./types";
-import { CURRENCY_DECIMALS as currencyDecimals } from './currency-config';
+import { CURRENCY_DECIMALS } from './currency-config';
 
 
 /**
@@ -8,7 +8,7 @@ import { CURRENCY_DECIMALS as currencyDecimals } from './currency-config';
  * E.g., USD is 100 cents in a dollar, so it has 2 decimal places.
  * JPY has no minor unit, so it has 0.
  */
-const SUBUNIT_MAP: Record<Currency, number> = currencyDecimals as Record<Currency, number>;
+const SUBUNIT_MAP: Record<string, number> = CURRENCY_DECIMALS;
 
 /**
  * Converts a major currency unit (e.g., dollars as a float/number) to a minor unit (e.g., cents as an integer).
@@ -57,3 +57,4 @@ export function convertBaseToMinor(baseMinorAmount: number, fxRate: number, loca
     const localMajor = baseMajor * fxRate;
     return toMinor(localMajor, localCurrency);
 }
+

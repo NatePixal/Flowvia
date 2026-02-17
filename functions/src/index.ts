@@ -13,5 +13,5 @@ export { exportStatement } from './exports';
 // Export functions for data maintenance and one-off scripts
 export * from './maintenance';
 
-// Export functions for core financial recalculations
+// Export functions for core financial recalculations and compatibility stubs
 export * from './financials';

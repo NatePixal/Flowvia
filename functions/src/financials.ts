@@ -1,135 +1,101 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
-import { fromMinor, toMinor, convertMinorToBase, convertBaseToMinor } from './money';
-import { Client, ClientLedgerEntry, Currency, Sale } from './types';
+import { toMinor } from './money';
 
 if (!admin.apps.length) {
-  admin.initializeApp();
+    admin.initializeApp();
 }
 const firestore = admin.firestore();
+type Currency = 'USD' | 'AED' | 'UZS' | 'CNY' | 'EUR' | 'KWD' | 'JOD' | 'BHD';
 
+// Reusable Security Assertions
+function assertAdminOrDeveloper(context: functions.https.CallableContext) {
+  if (!context.auth || (context.auth.token.role !== 'admin' && context.auth.token.role !== 'developer')) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin or Developer access required.');
+  }
+}
 
-// --- AUDIT AND REPAIR FUNCTIONS (for developers/admins) ---
+function assertCompanyAccess(context: functions.https.CallableContext, companyId: string) {
+  if (context.auth?.token.role === 'developer') return;
+  if (context.auth?.token.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'You do not have access to this company.');
+  }
+}
 
-export const auditFinancials = functions.region('us-central1').https.onCall(async (data, context) => {
-    // Implementation for auditing financials
+// Batched Update Helper
+async function batchedUpdate(updates: { ref: FirebaseFirestore.DocumentReference; data: Record<string, any> }[]) {
+  const batchSize = 450;
+  for (let i = 0; i < updates.length; i += batchSize) {
+    const batch = firestore.batch();
+    updates.slice(i, i + batchSize).forEach(u => batch.update(u.ref, u.data));
+    await batch.commit();
+  }
+}
+
+export const recalculateAllClientBalances = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
+    assertAdminOrDeveloper(context);
+    const { companyId } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    assertCompanyAccess(context, companyId);
+    
+    const clientsSnap = await firestore.collection(`companies/${companyId}/clients`).get();
+    const logs: string[] = [];
+    let updatedCount = 0;
+
+    for (const clientDoc of clientsSnap.docs) {
+        const ledgerSnap = await clientDoc.ref.collection('ledger').get();
+        const balances: Record<string, number> = {};
+        ledgerSnap.forEach(d => {
+            const entry = d.data() as any;
+            if (!entry.currency) return;
+            const due = entry.dueMinor ?? ((entry.totalMinor ?? 0) - (entry.paidMinor ?? 0));
+            balances[entry.currency] = (balances[entry.currency] || 0) + due;
+        });
+        await clientDoc.ref.update({ outstandingByCurrency: balances });
+        updatedCount++;
+    }
+    return { success: true, clientsProcessed: clientsSnap.size, clientsUpdated: updatedCount, logs };
 });
 
-export const migrateProductsToMinorUnits = functions.region('us-central1').https.onCall(async (data, context) => {
-    // Implementation for migrating products
+export const auditFinancials = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
+    assertAdminOrDeveloper(context);
+    const { companyId, sampleLimit = 500 } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    assertCompanyAccess(context, companyId);
+    return { ok: true, message: `Audit for ${companyId} would run here. Limit: ${sampleLimit}` };
 });
 
-export const recalculateSalesFinancials = functions.region('us-central1').https.onCall(async (data, context) => {
-    // Implementation for recalculating sales
+export const migrateProductsToMinorUnits = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
+    assertAdminOrDeveloper(context);
+    const { companyId, dryRun = true, limit = 2000 } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    assertCompanyAccess(context, companyId);
+    return { ok: true, companyId, dryRun, limit, message: 'Migration would run here.' };
+});
+
+export const recalculateSalesFinancials = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
+    assertAdminOrDeveloper(context);
+    const { companyId, dryRun = true, limit = 2000, force = false } = data;
+    if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    assertCompanyAccess(context, companyId);
+    return { ok: true, companyId, dryRun, limit, force, message: 'Recalculation would run here.' };
 });
 
 export const deepRepairFinancials = functions.region('us-central1').runWith({ timeoutSeconds: 540 }).https.onCall(async (data, context) => {
-    // Implementation for deep repair
-});
-
-export const recalculateAllClientBalances = functions
-  .region('us-central1')
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall(async (data, context) => {
-    if (!context.auth || (context.auth.token.role !== 'developer' && context.auth.token.role !== 'admin')) {
-      throw new functions.https.HttpsError('permission-denied', 'Admin or Developer access required.');
-    }
-
+    assertAdminOrDeveloper(context);
     const { companyId, dryRun = true } = data;
     if (!companyId) throw new functions.https.HttpsError('invalid-argument', 'Missing companyId.');
+    assertCompanyAccess(context, companyId);
+    return { ok: true, companyId, dryRun, message: 'Deep repair would run here.' };
+});
 
-    const clientsRef = firestore.collection(`companies/${companyId}/clients`);
-    const clientsSnap = await clientsRef.get();
-
-    const logs: string[] = [];
-    let clientsForUpdate = 0;
-
-    // ✅ MUST be let, because we reset it after commit
-    let batch = firestore.batch();
-    let writeCount = 0;
-
-    const normalizeBalances = (b: Record<string, number>) => {
-      const out: Record<string, number> = {};
-      for (const k of Object.keys(b)) {
-        const n = Number(b[k] ?? 0);
-        if (n !== 0) out[k] = n; // keep signed values, drop zeros
-      }
-      return out;
-    };
-
-    const stableStringify = (obj: Record<string, any>) =>
-      JSON.stringify(
-        Object.keys(obj)
-          .sort()
-          .reduce((acc, k) => {
-            acc[k] = obj[k];
-            return acc;
-          }, {} as Record<string, any>)
-      );
-
-    for (const clientDoc of clientsSnap.docs) {
-      const clientData = clientDoc.data() as Client;
-
-      const ledgerRef = firestore.collection(`companies/${companyId}/clients/${clientDoc.id}/ledger`);
-      const ledgerSnap = await ledgerRef.get();
-
-      const newBalancesRaw: Record<string, number> = {};
-
-      ledgerSnap.forEach((d) => {
-        const entry = d.data() as ClientLedgerEntry;
-        const currency = entry.currency;
-        if (!currency) return;
-
-        if (newBalancesRaw[currency] === undefined) newBalancesRaw[currency] = 0;
-
-        if (entry.type === 'purchase') {
-          // purchases contribute positive
-          const purchaseMinor = Number(entry.totalMinor ?? 0);
-          newBalancesRaw[currency] += purchaseMinor;
-        } else if (entry.type === 'payment') {
-          // payments subtract; support legacy rows
-          const payMinor = Number(entry.paymentMinor ?? entry.totalMinor ?? 0);
-          newBalancesRaw[currency] -= payMinor;
-        }
-      });
-
-      const newBalances = normalizeBalances(newBalancesRaw);
-
-      const oldBalances = normalizeBalances((clientData.outstandingByCurrency as any) || {});
-      const oldJSON = stableStringify(oldBalances);
-      const newJSON = stableStringify(newBalances);
-
-      if (oldJSON !== newJSON) {
-        clientsForUpdate++;
-
-        if (logs.length < 200) {
-          logs.push(
-            `Client ${clientDoc.id} (${clientData.name || '—'}): OLD=${oldJSON} NEW=${newJSON}`
-          );
-        }
-
-        if (!dryRun) {
-          batch.update(clientDoc.ref, { outstandingByCurrency: newBalances });
-          writeCount++;
-
-          if (writeCount >= 400) {
-            await batch.commit();
-            batch = firestore.batch();
-            writeCount = 0;
-          }
-        }
-      }
-    }
-
-    if (!dryRun && writeCount > 0) {
-      await batch.commit();
-    }
-
-    return {
-      success: true,
-      dryRun,
-      clientsProcessed: clientsSnap.size,
-      clientsForUpdate,
-      logs: dryRun ? logs : [`Updated ${clientsForUpdate} clients.`],
-    };
-  });
+// Compatibility Stubs
+export const updateDashboardStats = functions.region('us-central1').https.onCall(async () => {
+    return { ok: true, message: 'No-op: dashboard stats are computed client-side.' };
+});
+export const updateMonthlyRevenue = functions.region('us-central1').https.onCall(async () => {
+    return { ok: true, message: 'No-op: monthly revenue is computed client-side.' };
+});
+export const updateClientBalances = functions.region('us-central1').https.onCall(async () => {
+    return { ok: true, message: 'Deprecated: use recalculateAllClientBalances.' };
+});
