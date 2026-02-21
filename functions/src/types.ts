@@ -147,7 +147,7 @@ export type Sale = {
 // Represents a client who purchases products.
 export type Client = {
   id: string; // Document ID
-  companyId?: string; // Optional for backward compatibility, required for new clients
+  companyId: string; // Optional for backward compatibility, required for new clients
   name: string;
   phoneNumber?: string;
   location?: string;
@@ -380,5 +380,6 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
+
 
 

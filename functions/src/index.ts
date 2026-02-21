@@ -431,7 +431,7 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
 // 1) Country Pack setup
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const ensureTaxSettingsExists = functions.region('us-central1').https.onCall(async (data, context) => {
+export const ensureTaxSettingsExists = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'developer');
   const companyId = fvGetCompanyId(context, data);
   const country = (data?.country || 'AE') as 'AE' | 'SA' | 'JO' | 'EG';
@@ -446,6 +446,7 @@ export const ensureTaxSettingsExists = functions.region('us-central1').https.onC
   const defaults = fvDefaultTaxSettings(country, data?.overrides || {});
   await ref.set(
     {
+      companyId,
       ...defaults,
       updatedAt: FvFieldValue.serverTimestamp(),
       updatedBy: auth.uid,
@@ -470,37 +471,37 @@ export const ensureTaxSettingsExists = functions.region('us-central1').https.onC
 // 2) Business date stampers (existing collections)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const ensureBusinessFieldsOnExpenseCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnExpenseCreate = functions.firestore
   .document('companies/{companyId}/dailyExpenses/{expenseId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['date', 'createdAt', 'recordedAt']);
   });
 
-export const ensureBusinessFieldsOnIncomingCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnIncomingCreate = functions.firestore
   .document('companies/{companyId}/incomingProducts/{incomingId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['date', 'incomeDate', 'createdAt', 'recordedAt']);
   });
 
-export const ensureBusinessFieldsOnSaleCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnSaleCreate = functions.firestore
   .document('companies/{companyId}/sales/{saleId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['date', 'createdAt', 'recordedAt']);
   });
 
-export const ensureBusinessFieldsOnAgriConsumptionCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnAgriConsumptionCreate = functions.firestore
   .document('companies/{companyId}/agriConsumptions/{consumptionId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['date', 'createdAt']);
   });
 
-export const ensureBusinessFieldsOnAgriBatchCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnAgriBatchCreate = functions.firestore
   .document('companies/{companyId}/agriBatches/{batchId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['harvestDate', 'createdAt']);
   });
 
-export const ensureBusinessFieldsOnSettlementCreate = functions.region('us-central1').firestore
+export const ensureBusinessFieldsOnSettlementCreate = functions.firestore
   .document('companies/{companyId}/settlements/{settlementId}')
   .onCreate(async (snap) => {
     await fvStampBusinessFieldsIfMissing(snap.ref, snap.data(), ['date', 'createdAt']);
@@ -510,7 +511,7 @@ export const ensureBusinessFieldsOnSettlementCreate = functions.region('us-centr
 // 3) VAT recompute triggers
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const recomputeSaleTaxAndTotals = functions.region('us-central1').firestore
+export const recomputeSaleTaxAndTotals = functions.firestore
   .document('companies/{companyId}/sales/{saleId}')
   .onWrite(async (change, context) => {
     const after = change.after.data();
@@ -538,7 +539,7 @@ export const recomputeSaleTaxAndTotals = functions.region('us-central1').firesto
     }
   });
 
-export const recomputeIncomingVatAndTotals = functions.region('us-central1').firestore
+export const recomputeIncomingVatAndTotals = functions.firestore
   .document('companies/{companyId}/incomingProducts/{incomingId}')
   .onWrite(async (change, context) => {
     const after = change.after.data();
@@ -568,7 +569,7 @@ export const recomputeIncomingVatAndTotals = functions.region('us-central1').fir
 // 4) Issue invoice for an existing sale
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const issueInvoiceForSale = functions.region('us-central1').https.onCall(async (data, context) => {
+export const issueInvoiceForSale = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
   const companyId = fvGetCompanyId(context, data);
   const saleId = data?.saleId as string;
@@ -631,6 +632,7 @@ export const issueInvoiceForSale = functions.region('us-central1').https.onCall(
     const businessDay = fvToBusinessDay(businessDate);
 
     tx.set(invoiceRef, {
+      companyId,
       sourceType: 'SALE',
       sourceId: saleId,
       invoiceNumber,
@@ -778,7 +780,7 @@ function fvInvoiceHtml(invoice: any) {
 </html>`;
 }
 
-export const generateInvoicePdf = functions.region('us-central1').https.onCall(async (data, context) => {
+export const generateInvoicePdf = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
   const companyId = fvGetCompanyId(context, data);
   const invoiceId = data?.invoiceId as string;
@@ -818,7 +820,7 @@ export const generateInvoicePdf = functions.region('us-central1').https.onCall(a
 // 6) VAT return generator (uses sales + incomingProducts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const generateVatReturn = functions.region('us-central1').https.onCall(async (data, context) => {
+export const generateVatReturn = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'developer');
   const companyId = fvGetCompanyId(context, data);
   const period = data?.period as string;
@@ -877,6 +879,7 @@ export const generateVatReturn = functions.region('us-central1').https.onCall(as
   const netVatMinor = outputVatMinor - inputVatMinor;
 
   const payload = {
+    companyId,
     period,
     startDate,
     endDate,
@@ -913,7 +916,7 @@ export const generateVatReturn = functions.region('us-central1').https.onCall(as
 // 7) Basic sales adjustment (simple, audited correction path)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createSalesAdjustment = functions.region('us-central1').https.onCall(async (data, context) => {
+export const createSalesAdjustment = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'developer');
   const companyId = fvGetCompanyId(context, data);
 
@@ -957,6 +960,7 @@ export const createSalesAdjustment = functions.region('us-central1').https.onCal
 
     const adjRef = firestore.collection(`companies/${companyId}/saleAdjustments`).doc();
     tx.set(adjRef, {
+      companyId,
       saleId,
       invoiceId: sale.invoice.invoiceId,
       invoiceNumber: sale.invoice.invoiceNumber,
@@ -999,7 +1003,7 @@ export const createSalesAdjustment = functions.region('us-central1').https.onCal
 // 8) Agri / Palm pack callables
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createHarvestBatch = functions.region('us-central1').https.onCall(async (data, context) => {
+export const createHarvestBatch = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'manager', 'accounting', 'developer');
   const companyId = fvGetCompanyId(context, data);
 
@@ -1025,6 +1029,7 @@ export const createHarvestBatch = functions.region('us-central1').https.onCall(a
   const businessDay = fvToBusinessDay(businessDate);
 
   const ref = await firestore.collection(`companies/${companyId}/agriBatches`).add({
+    companyId,
     seasonId,
     fieldId,
     harvestDate: harvestDate ? admin.firestore.Timestamp.fromDate(new Date(harvestDate)) : FvFieldValue.serverTimestamp(),
@@ -1051,7 +1056,7 @@ export const createHarvestBatch = functions.region('us-central1').https.onCall(a
   return { success: true, batchId: ref.id };
 });
 
-export const recordAgriConsumption = functions.region('us-central1').https.onCall(async (data, context) => {
+export const recordAgriConsumption = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'manager', 'accounting', 'developer');
   const companyId = fvGetCompanyId(context, data);
 
@@ -1134,6 +1139,7 @@ export const recordAgriConsumption = functions.region('us-central1').https.onCal
 
     const consRef = firestore.collection(`companies/${companyId}/agriConsumptions`).doc();
     tx.set(consRef, {
+      companyId,
       seasonId,
       fieldId,
       date: date ? admin.firestore.Timestamp.fromDate(new Date(date)) : FvFieldValue.serverTimestamp(),
@@ -1168,7 +1174,7 @@ export const recordAgriConsumption = functions.region('us-central1').https.onCal
   return { success: true, totalCostMinor, currency: companyBaseCurrency };
 });
 
-export const confirmSettlement = functions.region('us-central1').https.onCall(async (data, context) => {
+export const confirmSettlement = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
   const companyId = fvGetCompanyId(context, data);
 
@@ -1276,7 +1282,7 @@ export const confirmSettlement = functions.region('us-central1').https.onCall(as
 // 9) Agri season P&L export (JSON snapshot)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const exportSeasonPnl = functions.region('us-central1').https.onCall(async (data, context) => {
+export const exportSeasonPnl = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
   const companyId = fvGetCompanyId(context, data);
   const seasonId = data?.seasonId as string;
@@ -1394,7 +1400,7 @@ export const exportSeasonPnl = functions.region('us-central1').https.onCall(asyn
 // 10) Optional trigger: keep agri season totalCost in sync when consumptions edited
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const onAgriConsumptionWriteRecomputeSeasonTotal = functions.region('us-central1').firestore
+export const onAgriConsumptionWriteRecomputeSeasonTotal = functions.firestore
   .document('companies/{companyId}/agriConsumptions/{consumptionId}')
   .onWrite(async (change, context) => {
     const companyId = context.params.companyId as string;

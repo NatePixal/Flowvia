@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu';
-import { PlusCircle, MoreHorizontal, FileDown, ListFilter, Edit } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, FileDown, ListFilter, Edit, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useFirebase } from '@/firebase/provider';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, deleteDoc, runTransaction, Timestamp, getDocs, getDoc, query, where, deleteField, orderBy, FieldValue, writeBatch } from 'firebase/firestore';
@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import DateRangePicker from '@/components/ui/date-range-picker';
 import { DateRange } from 'react-day-picker';
 import { useCompanyUsers } from '@/hooks/use-company-users';
+import { issueInvoiceForSale, generateInvoicePrintable } from '@/lib/flowvia-functions';
 
 type DateInput = string | Date | Timestamp | FieldValue | null | undefined;
 
@@ -403,6 +404,23 @@ export default function SalesPage() {
     );
   };
 
+  const handleIssueInvoice = async (saleId: string) => {
+    if (!companyId) return;
+  
+    try {
+      const issued: any = await issueInvoiceForSale({ companyId, saleId });
+  
+      // Optional: generate printable HTML immediately
+      if (issued?.invoiceId) {
+        await generateInvoicePrintable({ companyId, invoiceId: issued.invoiceId });
+      }
+      toast({ title: "Invoice Issued", description: `Invoice ${issued?.invoiceNumber || 'OK'} has been issued.` });
+    } catch (err: any) {
+      console.error(err);
+      toast({ variant: 'destructive', title: "Failed to issue invoice", description: err?.message || 'An unknown error occurred.' });
+    }
+  };
+
   const openEditDialog = (sale: Sale) => {
     setSelectedSale(sale);
     setIsEditDialogOpen(true);
@@ -498,6 +516,10 @@ export default function SalesPage() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="ghost" className="h-8 w-8 p-0"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleIssueInvoice(sale.id)}>
+                                <FileText className="mr-2 h-4 w-4" />
+                                <span>Issue Invoice</span>
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEditDialog(sale)}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 <span>{t('sales.edit')}</span>
