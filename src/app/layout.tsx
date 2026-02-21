@@ -4,9 +4,9 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import Script from 'next/script';
 import { ThemeProvider } from '@/components/providers/theme-provider';
-import { CurrencyProvider } from '@/lib/currency-provider';
-import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { GoogleAnalytics } from '@/components/analytics/google-analytics';
+import { FirebaseClientProvider } from '@/firebase';
+import { CurrencyProvider } from '@/lib/currency-provider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -24,18 +24,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`${inter.className} antialiased`}>
         <GoogleAnalytics />
-        <FirebaseClientProvider>
-          <CurrencyProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              {children}
-            </ThemeProvider>
-          </CurrencyProvider>
-        </FirebaseClientProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

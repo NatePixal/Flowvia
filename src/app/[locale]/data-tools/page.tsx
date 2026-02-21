@@ -1,4 +1,4 @@
-// This file is intentionally modified to resolve a routing conflict with src/app/[locale]/(app)/data-tools/page.tsx.
-// It exports a constant to ensure Next.js does not treat it as a page component.
+// This file resolves a routing conflict by re-exporting the correct page component.
+import DataToolsPage from '../(app)/data-tools/page';
 
-export const conflict_resolver = true;
+export default DataToolsPage;
