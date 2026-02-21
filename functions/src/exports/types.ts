@@ -1,7 +1,8 @@
-
 // functions/src/exports/types.ts
+import type { Currency } from '../types';
 
-export type Currency = 'USD' | 'AED' | 'UZS' | 'CNY';
+export type { Currency };
+
 export type StatementCurrency = Currency | 'QTY';
 
 export interface StatementRow {
