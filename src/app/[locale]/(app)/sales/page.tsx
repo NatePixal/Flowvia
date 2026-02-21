@@ -264,7 +264,7 @@ export default function SalesPage() {
         if (!saleSnap.exists()) throw new Error("Sale not found.");
         const oldSale = saleSnap.data() as Sale;
 
-        const productRef = companyDoc(firestore, companyId, oldSale.productId);
+        const productRef = companyDoc(firestore, companyId, `products/${oldSale.productId}`);
         const productSnap = await transaction.get(productRef);
         if (!productSnap.exists()) throw new Error("Product not found.");
         const productData = productSnap.data() as Product;

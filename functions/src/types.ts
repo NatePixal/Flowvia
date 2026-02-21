@@ -2,7 +2,7 @@
 import type { Timestamp, FieldValue } from 'firebase-admin/firestore';
 
 // Base type for currency codes
-export type Currency = 'USD' | 'AED' | 'UZS' | 'CNY';
+export type Currency = 'USD' | 'AED' | 'SAR' | 'JOD' | 'EGP' | 'UZS' | 'CNY';
 
 // User roles as defined in the application logic
 export type UserRole = 'developer' | 'admin' | 'manager' | 'sales' | 'accounting';
@@ -380,4 +380,5 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
+
 
