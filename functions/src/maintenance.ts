@@ -258,5 +258,46 @@ export const backfillBusinessDates = functions
     return { success: true, dryRun, companiesProcessed: companiesSnap.length, totalUpdated, logs: allLogs.slice(0, 200) };
   });
 
-// existing maintenance functions from user's code
-export { createBackup } from './maintenance';
+export const createBackup = functions
+  .region("us-central1")
+  .runWith({ timeoutSeconds: 540, memory: "1GB" })
+  .https.onCall(async (data, context) => {
+    const role = context.auth?.token?.role;
+    if (role !== "developer") {
+      throw new functions.https.HttpsError("permission-denied", "Developer access required.");
+    }
+    const { companyId, collections } = data as { companyId?: string; collections?: string[] };
+    if (!companyId || !Array.isArray(collections) || collections.length === 0) {
+      throw new functions.https.HttpsError("invalid-argument", "companyId and a non-empty collections array are required.");
+    }
+
+    const backupTimestamp = new Date().toISOString().replace(/:/g, "-");
+    const backupPrefix = `backups/${companyId}/${backupTimestamp}`;
+    const summary: Record<string, number> = {};
+
+    for (const coll of collections) {
+      const originalPath = `companies/${companyId}/${coll}`;
+      const backupPath = `${backupPrefix}/${coll}`;
+      const originalDocs = await firestore.collection(originalPath).get();
+      
+      summary[coll] = originalDocs.size;
+      if (originalDocs.empty) continue;
+
+      // Batch write the backed-up documents
+      const chunks = [];
+      for (let i = 0; i < originalDocs.docs.length; i += 450) {
+        chunks.push(originalDocs.docs.slice(i, i + 450));
+      }
+
+      for (const chunk of chunks) {
+        const batch = firestore.batch();
+        for (const doc of chunk) {
+          const backupDocRef = firestore.collection(backupPath).doc(doc.id);
+          batch.set(backupDocRef, doc.data());
+        }
+        await batch.commit();
+      }
+    }
+
+    return { success: true, message: `Backup created at ${backupPrefix}`, summary };
+  });
