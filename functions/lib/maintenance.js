@@ -193,7 +193,8 @@ exports.backfillBusinessDates = functions
     const companiesSnap = companyId
         ? [await firestore.collection('companies').doc(companyId).get()]
         : await firestore.collection('companies').get();
-    for (const companyDoc of (companyId ? companiesSnap : companiesSnap.docs)) {
+    const companyDocs = Array.isArray(companiesSnap) ? companiesSnap : companiesSnap.docs;
+    for (const companyDoc of companyDocs) {
         if (!companyDoc.exists)
             continue;
         const cid = companyDoc.id;
@@ -227,7 +228,7 @@ exports.backfillBusinessDates = functions
             }
         }
     }
-    return { success: true, dryRun, companiesProcessed: companiesSnap.length, totalUpdated, logs: allLogs.slice(0, 200) };
+    return { success: true, dryRun, companiesProcessed: companyDocs.length, totalUpdated, logs: allLogs.slice(0, 200) };
 });
 exports.createBackup = functions
     .region("us-central1")
