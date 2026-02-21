@@ -9,9 +9,12 @@ export const BASE_CURRENCY: Currency = 'USD';
 
 export const exchangeRates: Record<Currency, number> = {
   USD: 1,
-  UZS: 12650, 
+  UZS: 12650,
   AED: 3.67,
   CNY: 7.24,
+  SAR: 3.75,
+  JOD: 0.71,
+  EGP: 48.50,
 };
 
 interface CurrencyContextType {

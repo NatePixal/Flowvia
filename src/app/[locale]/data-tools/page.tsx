@@ -1,2 +1,4 @@
-// This file is intentionally left empty to resolve a Next.js routing conflict.
-// The active page is located at /src/app/[locale]/(app)/data-tools/page.tsx.
+// This file is intentionally modified to resolve a routing conflict with src/app/[locale]/(app)/data-tools/page.tsx.
+// It exports a constant to ensure Next.js does not treat it as a page component.
+
+export const conflict_resolver = true;
