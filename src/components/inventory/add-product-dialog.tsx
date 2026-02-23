@@ -19,7 +19,15 @@ import { useTranslation } from 'react-i18next';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { exchangeRates } from '@/lib/currency-provider';
+import { useFirebase } from '@/firebase';
 import { normalizeProductCode } from '@/lib/normalize';
+
+const convertLegacyAmount = (amount: number, from: Currency, to: Currency) => {
+  const fromPerUsd = exchangeRates[from] || 1;
+  const toPerUsd = exchangeRates[to] || 1;
+  if (from === to) return amount;
+  return (amount / fromPerUsd) * toPerUsd;
+};
 
 interface AddProductDialogProps {
   open: boolean;
@@ -31,6 +39,7 @@ interface AddProductDialogProps {
 export default function AddProductDialog({ open, onOpenChange, onAddProduct, suppliers }: AddProductDialogProps) {
   const { t, ready } = useTranslation();
   const { toast } = useToast();
+  const { companyBaseCurrency } = useFirebase();
   
   const [name, setName] = useState('');
   const [productCode, setProductCode] = useState('');
@@ -67,8 +76,9 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
     const purchaseP = parseFloat(purchasePrice) || 0;
     const sellingP = parseFloat(sellingPrice) || 0;
 
-    const purchasePriceInBase = purchaseP / exchangeRates[purchasePriceCurrency];
-    const sellingPriceInBase = sellingP / exchangeRates[sellingPriceCurrency];
+    const baseCcy = companyBaseCurrency || 'USD';
+    const purchasePriceInBase = convertLegacyAmount(purchaseP, purchasePriceCurrency, baseCcy);
+    const sellingPriceInBase = convertLegacyAmount(sellingP, sellingPriceCurrency, baseCcy);
 
     const productData = { 
       name, 
@@ -166,6 +176,9 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
                       <SelectContent>
                           <SelectItem value="USD">USD</SelectItem>
                           <SelectItem value="AED">AED</SelectItem>
+                          <SelectItem value="SAR">SAR</SelectItem>
+                          <SelectItem value="JOD">JOD</SelectItem>
+                          <SelectItem value="EGP">EGP</SelectItem>
                           <SelectItem value="UZS">UZS</SelectItem>
                           <SelectItem value="CNY">CNY</SelectItem>
                       </SelectContent>
@@ -184,6 +197,9 @@ export default function AddProductDialog({ open, onOpenChange, onAddProduct, sup
                       <SelectContent>
                           <SelectItem value="USD">USD</SelectItem>
                           <SelectItem value="AED">AED</SelectItem>
+                          <SelectItem value="SAR">SAR</SelectItem>
+                          <SelectItem value="JOD">JOD</SelectItem>
+                          <SelectItem value="EGP">EGP</SelectItem>
                           <SelectItem value="UZS">UZS</SelectItem>
                           <SelectItem value="CNY">CNY</SelectItem>
                       </SelectContent>

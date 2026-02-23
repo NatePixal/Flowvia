@@ -5,6 +5,6 @@ export const CURRENCY_DECIMALS: Record<string, number> = {
   "SAR": 2,
   "JOD": 3,
   "EGP": 2,
-  "UZS": 2,
+  "UZS": 0,
   "CNY": 2,
 };

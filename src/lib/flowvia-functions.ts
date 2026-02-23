@@ -33,8 +33,7 @@ export function generateInvoicePrintable(input: {
   companyId: string;
   invoiceId: string;
 }) {
-  // backend function name remains generateInvoicePdf (it stores printable HTML for now)
-  return callFn<typeof input>('generateInvoicePdf', input);
+  return callFn<typeof input, { success: boolean; storagePath: string; format: 'pdf'; downloadUrl?: string; expiresAt?: string }>('generateInvoicePdf', input);
 }
 
 export function generateVatReturn(input: {

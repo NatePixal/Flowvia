@@ -11,7 +11,7 @@ import { readFirstSheetRows, requireColumns, parseDateLoose, parseLooseNumber } 
 import { Currency, ClientLedgerEntry, DailyExpense, Product } from "@/lib/types";
 import { toMinor, clampNonNegative } from "@/lib/money";
 
-const ALLOWED_CURRENCIES: Currency[] = ["USD", "UZS", "AED", "CNY"];
+const ALLOWED_CURRENCIES: Currency[] = ["USD", "AED", "SAR", "JOD", "EGP", "UZS", "CNY"];
 
 function assertCurrency(v: any): Currency {
   const c = String(v || "").trim().toUpperCase();

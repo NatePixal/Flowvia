@@ -2,7 +2,8 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { UserRole, Currency } from './types';
-import { toMinor, convertMinorToBase, convertBaseToMinor } from './money';
+import { toMinor, fromMinor, convertMinorToBase, convertBaseToMinor } from './money';
+const PDFDocument = require('pdfkit');
 
 if (!admin.apps.length) {
     admin.initializeApp();
@@ -720,64 +721,111 @@ export const issueInvoiceForSale = functions.https.onCall(async (data, context) 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5) "generateInvoicePdf" without extra dependency (stores printable HTML)
-//    This avoids adding a PDF library right now. Frontend can open/print HTML.
+// 5) generateInvoicePdf (real PDF via PDFKit)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function fvInvoiceHtml(invoice: any) {
-  const lines = (invoice.lineItems || [])
-    .map((l: any) => `
-      <tr>
-        <td>${String(l.name || '')}</td>
-        <td style="text-align:right">${l.qty ?? 0}</td>
-        <td style="text-align:right">${l.unitPriceMinor ?? 0}</td>
-        <td style="text-align:right">${l.netMinor ?? 0}</td>
-        <td style="text-align:right">${l.vatMinor ?? 0}</td>
-        <td style="text-align:right">${l.grossMinor ?? 0}</td>
-      </tr>
-    `)
-    .join('');
+function fvFmtMinor(minor: number, currency: Currency): string {
+  const value = fromMinor(Number(minor ?? 0), currency);
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: currency === 'UZS' ? 0 : undefined,
+      maximumFractionDigits: currency === 'UZS' ? 0 : undefined,
+    }).format(value);
+  } catch {
+    return `${value} ${currency}`;
+  }
+}
 
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Invoice ${invoice.invoiceNumber}</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 24px; }
-  h1 { margin: 0 0 8px; }
-  .meta { margin-bottom: 16px; color: #444; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
-  th { background: #f6f6f6; }
-  .totals { margin-top: 14px; width: 320px; margin-left: auto; }
-  .totals td { border: none; padding: 4px 0; }
-</style>
-</head>
-<body>
-  <h1>Invoice ${invoice.invoiceNumber}</h1>
-  <div class="meta">
-    <div><b>Seller:</b> ${invoice.sellerSnapshot?.legalName || ''}</div>
-    <div><b>Buyer:</b> ${invoice.buyerSnapshot?.name || ''}</div>
-    <div><b>Currency:</b> ${invoice.currency || ''}</div>
-    <div><b>Country:</b> ${invoice.country || ''}</div>
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Item</th><th>Qty</th><th>Unit</th><th>Net</th><th>VAT</th><th>Gross</th>
-      </tr>
-    </thead>
-    <tbody>${lines}</tbody>
-  </table>
-  <table class="totals">
-    <tr><td><b>Net</b></td><td style="text-align:right">${invoice.totals?.netTotal ?? 0}</td></tr>
-    <tr><td><b>VAT</b></td><td style="text-align:right">${invoice.totals?.vatTotal ?? 0}</td></tr>
-    <tr><td><b>Gross</b></td><td style="text-align:right">${invoice.totals?.grossTotal ?? 0}</td></tr>
-  </table>
-  <p style="margin-top:18px;color:#666">Stored by FlowVia Cloud Functions (printable HTML version).</p>
-</body>
-</html>`;
+async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
+  const currency = (invoice.currency || 'USD') as Currency;
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const chunks: Buffer[] = [];
+
+  return await new Promise<Buffer>((resolve, reject) => {
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const seller = invoice.sellerSnapshot || {};
+    const buyer = invoice.buyerSnapshot || {};
+    const totals = invoice.totals || {};
+    const lines = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
+
+    doc.fontSize(20).text(`Invoice ${invoice.invoiceNumber || ''}`, { align: 'left' });
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor('#444').text(`Issue Date: ${String(invoice.issueDate || '').slice(0, 10)}`);
+    doc.text(`Country: ${invoice.country || ''}`);
+    doc.text(`Currency: ${currency}`);
+    doc.fillColor('#000');
+    doc.moveDown();
+
+    doc.fontSize(11).font('Helvetica-Bold').text('Seller');
+    doc.font('Helvetica').fontSize(10);
+    doc.text(seller.legalName || '');
+    if (seller.taxId) doc.text(`Tax ID: ${seller.taxId}`);
+    if (seller.address) doc.text(`Address: ${seller.address}`);
+
+    doc.moveDown(0.6);
+    doc.fontSize(11).font('Helvetica-Bold').text('Buyer');
+    doc.font('Helvetica').fontSize(10);
+    doc.text(buyer.name || '');
+    if (buyer.clientId) doc.text(`Client ID: ${buyer.clientId}`);
+
+    doc.moveDown();
+
+    const x = 40;
+    let y = doc.y;
+    const cols = [x, x + 210, x + 255, x + 330, x + 405, x + 485];
+    const rowH = 18;
+
+    const drawRow = (rowY: number, vals: string[], bold = false) => {
+      if (rowY > 760) {
+        doc.addPage();
+        rowY = 50;
+      }
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
+      doc.text(vals[0] || '', cols[0], rowY, { width: 205 });
+      doc.text(vals[1] || '', cols[1], rowY, { width: 40, align: 'right' });
+      doc.text(vals[2] || '', cols[2], rowY, { width: 70, align: 'right' });
+      doc.text(vals[3] || '', cols[3], rowY, { width: 70, align: 'right' });
+      doc.text(vals[4] || '', cols[4], rowY, { width: 70, align: 'right' });
+      doc.text(vals[5] || '', cols[5], rowY, { width: 70, align: 'right' });
+      doc.moveTo(x, rowY + rowH - 3).lineTo(555, rowY + rowH - 3).strokeColor('#e5e7eb').stroke();
+      return rowY + rowH;
+    };
+
+    y = drawRow(y, ['Item', 'Qty', 'Unit', 'Net', 'VAT', 'Gross'], true);
+    for (const l of lines) {
+      y = drawRow(y, [
+        String(l.name || ''),
+        String(l.qty ?? 0),
+        fvFmtMinor(Number(l.unitPriceMinor ?? 0), currency),
+        fvFmtMinor(Number(l.netMinor ?? 0), currency),
+        fvFmtMinor(Number(l.vatMinor ?? 0), currency),
+        fvFmtMinor(Number(l.grossMinor ?? 0), currency),
+      ]);
+    }
+
+    doc.moveDown();
+    let ty = Math.max(doc.y + 8, y + 10);
+    const labelX = 360;
+    const valX = 470;
+    const totalLine = (label: string, val: number, bold = false) => {
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).text(label, labelX, ty, { width: 100 });
+      doc.text(fvFmtMinor(val, currency), valX, ty, { width: 85, align: 'right' });
+      ty += 16;
+    };
+
+    totalLine('Net', Number(totals.netTotal ?? 0));
+    totalLine('VAT', Number(totals.vatTotal ?? 0));
+    totalLine('Gross', Number(totals.grossTotal ?? 0), true);
+
+    doc.moveDown(2);
+    doc.fillColor('#6b7280').fontSize(8).text('Generated by FlowVia Cloud Functions');
+    doc.end();
+  });
 }
 
 export const generateInvoicePdf = functions.https.onCall(async (data, context) => {
@@ -795,25 +843,38 @@ export const generateInvoicePdf = functions.https.onCall(async (data, context) =
   }
   const invoice = snap.data() as any;
 
-  const html = fvInvoiceHtml(invoice);
+  const pdfBuffer = await fvInvoicePdfBuffer(invoice);
   const bucket = admin.storage().bucket();
-  const path = `companies/${companyId}/invoices/${invoiceId}.html`; // printable now; convert to PDF later
-  await bucket.file(path).save(html, { contentType: 'text/html; charset=utf-8' });
+  const path = `companies/${companyId}/invoices/${invoiceId}.pdf`;
+  const file = bucket.file(path);
+  await file.save(pdfBuffer, {
+    contentType: 'application/pdf',
+    resumable: false,
+    metadata: { cacheControl: 'private, max-age=3600' },
+  });
+
+  const expiresAtMs = Date.now() + 1000 * 60 * 60 * 12;
+  const [downloadUrl] = await file.getSignedUrl({ action: 'read', expires: expiresAtMs });
 
   await invoiceRef.set(
     {
-      printable: { storagePath: path, generatedAt: FvFieldValue.serverTimestamp(), format: 'html' },
+      printable: {
+        storagePath: path,
+        generatedAt: FvFieldValue.serverTimestamp(),
+        format: 'pdf',
+        signedUrlExpiresAt: new Date(expiresAtMs).toISOString(),
+      },
       updatedAt: FvFieldValue.serverTimestamp(),
     },
     { merge: true }
   );
 
   await fvWriteAuditLog(companyId, 'INVOICE', invoiceId, 'UPDATE', auth.uid, undefined, {
-    action: 'GENERATE_PRINTABLE',
+    action: 'GENERATE_PDF',
     storagePath: path,
   });
 
-  return { success: true, storagePath: path, format: 'html' };
+  return { success: true, storagePath: path, format: 'pdf', downloadUrl, expiresAt: new Date(expiresAtMs).toISOString() };
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

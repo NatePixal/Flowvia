@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProfileSettings from '@/components/settings/profile-settings';
 import CompanySettings from '@/components/settings/company-settings';
 import SecuritySettings from '@/components/settings/security-settings';
+import { TaxVatTools } from '@/components/settings/tax-vat-tools';
 import PermissionsSettings from '@/components/settings/permissions-settings';
 import { useFirebase } from '@/firebase';
 import { hasPermission } from '@/lib/permissions';
@@ -32,6 +33,7 @@ export default function SettingsPage() {
         <TabsContent value="company" className="mt-6">
           <div className="space-y-6">
             <CompanySettings />
+            <TaxVatTools />
             {hasPermission(userProfile, 'users', 'view') && <PermissionsSettings />}
           </div>
         </TabsContent>

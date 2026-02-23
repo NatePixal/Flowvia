@@ -111,7 +111,11 @@ export default function AddEmployeeDialog({ open, onOpenChange, onAddEmployee }:
                       <SelectContent>
                           <SelectItem value="USD">USD</SelectItem>
                           <SelectItem value="AED">AED</SelectItem>
+                          <SelectItem value="SAR">SAR</SelectItem>
+                          <SelectItem value="JOD">JOD</SelectItem>
+                          <SelectItem value="EGP">EGP</SelectItem>
                           <SelectItem value="UZS">UZS</SelectItem>
+                          <SelectItem value="CNY">CNY</SelectItem>
                       </SelectContent>
                   </Select>
               </div>

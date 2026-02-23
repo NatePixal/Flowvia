@@ -231,6 +231,9 @@ export default function CompanySettings() {
                       <SelectContent>
                           <SelectItem value="USD">USD - United States Dollar</SelectItem>
                           <SelectItem value="AED">AED - UAE Dirham</SelectItem>
+                          <SelectItem value="SAR">SAR - Saudi Riyal</SelectItem>
+                          <SelectItem value="JOD">JOD - Jordanian Dinar</SelectItem>
+                          <SelectItem value="EGP">EGP - Egyptian Pound</SelectItem>
                           <SelectItem value="UZS">UZS - Uzbekistani So'm</SelectItem>
                           <SelectItem value="CNY">CNY - Chinese Yuan</SelectItem>
                       </SelectContent>

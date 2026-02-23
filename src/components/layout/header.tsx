@@ -107,6 +107,9 @@ export default function Header() {
           <DropdownMenuRadioGroup value={currency} onValueChange={handleCurrencyChange}>
             <DropdownMenuRadioItem value="USD">USD</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="AED">AED</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="SAR">SAR</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="JOD">JOD</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="EGP">EGP</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="UZS">UZS</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="CNY">CNY</DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>

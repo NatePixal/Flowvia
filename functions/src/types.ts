@@ -134,8 +134,8 @@ export type Sale = {
   grossProfitBaseMinor?: number; // Gross profit in MINOR units of baseCurrency
 
   // Date fields
-  businessDay?: string; // YYYY-MM-DD
-  businessDate?: FirestoreTs;
+  businessDay?: string | number; // frontend legacy string or backend numeric YYYYMMDD
+  businessDate?: FirestoreTs | string;
 
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
@@ -190,8 +190,8 @@ export type ClientLedgerEntry = {
   legacy?: boolean;
   
   // Date fields
-  businessDay?: string; // YYYY-MM-DD
-  businessDate?: FirestoreTs;
+  businessDay?: string | number; // frontend legacy string or backend numeric YYYYMMDD
+  businessDate?: FirestoreTs | string;
 
   // Backward-compat aliases
   createdAt?: FirestoreTs | Date | string;
@@ -238,8 +238,8 @@ export type SupplierLedgerEntry = {
   createdAt: FirestoreTs;               // Firestore Timestamp
   
   // Date fields
-  businessDay?: string; // YYYY-MM-DD
-  businessDate?: FirestoreTs;
+  businessDay?: string | number; // frontend legacy string or backend numeric YYYYMMDD
+  businessDate?: FirestoreTs | string;
 
   relatedIncomingLogId?: string; // Link to the incoming stock log
 };
@@ -287,8 +287,8 @@ export type IncomingProductLog = {
   minStock?: number;
 
   // Date fields
-  businessDay?: string; // YYYY-MM-DD
-  businessDate?: FirestoreTs;
+  businessDay?: string | number; // frontend legacy string or backend numeric YYYYMMDD
+  businessDate?: FirestoreTs | string;
 
   // Backward-compat aliases (your UI/exporters still reference these)
   date?: Timestamp | Date | string;
@@ -351,8 +351,8 @@ export type DailyExpense = {
   amountBaseMinor?: number; // Total expense in MINOR units of `baseCurrency`
   
   // Date fields
-  businessDay?: string; // YYYY-MM-DD
-  businessDate?: FirestoreTs;
+  businessDay?: string | number; // frontend legacy string or backend numeric YYYYMMDD
+  businessDate?: FirestoreTs | string;
 };
 
 export type Invite = {

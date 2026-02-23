@@ -406,18 +406,34 @@ export default function SalesPage() {
 
   const handleIssueInvoice = async (saleId: string) => {
     if (!companyId) return;
-  
+
     try {
       const issued: any = await issueInvoiceForSale({ companyId, saleId });
-  
-      // Optional: generate printable HTML immediately
+      let pdfResult: any = null;
+
       if (issued?.invoiceId) {
-        await generateInvoicePrintable({ companyId, invoiceId: issued.invoiceId });
+        pdfResult = await generateInvoicePrintable({ companyId, invoiceId: issued.invoiceId });
+        if (pdfResult?.downloadUrl) {
+          window.open(pdfResult.downloadUrl, '_blank', 'noopener,noreferrer');
+        }
       }
-      toast({ title: "Invoice Issued", description: `Invoice ${issued?.invoiceNumber || 'OK'} has been issued.` });
+
+      toast({
+        title: 'Invoice Issued',
+        description: pdfResult?.downloadUrl
+          ? `Invoice ${issued?.invoiceNumber || 'OK'} issued and PDF opened.`
+          : `Invoice ${issued?.invoiceNumber || 'OK'} has been issued.`,
+      });
     } catch (err: any) {
       console.error(err);
-      toast({ variant: 'destructive', title: "Failed to issue invoice", description: err?.message || 'An unknown error occurred.' });
+      const msg = err?.message || 'An unknown error occurred.';
+      toast({
+        variant: 'destructive',
+        title: 'Failed to issue invoice',
+        description: /Tax settings not found/i.test(msg)
+          ? 'Tax settings are not configured yet. Open Settings → Company and initialize VAT settings first.'
+          : msg,
+      });
     }
   };
 
