@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirebase } from '@/firebase/provider';
+import { useFirebase, FirebaseClientProvider } from '@/firebase';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,8 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useSignUp } from '@/firebase/useSignUp';
 import { Building, RefreshCw } from 'lucide-react';
 
-export default function LoginPage({ params }: { params: { locale: string } }) {
+
+function LoginContent({ params }: { params: { locale: string } }) {
   const { locale } = params;
   const router = useRouter();
   const { auth, user, sessionReady, isUserLoading, isCompanyMember, isDeveloper, refreshUserProfile } = useFirebase();
@@ -191,5 +192,13 @@ export default function LoginPage({ params }: { params: { locale: string } }) {
         )}
       </div>
     </div>
+  );
+}
+
+export default function LoginPage({ params }: { params: { locale: string } }) {
+  return (
+    <FirebaseClientProvider>
+      <LoginContent params={params} />
+    </FirebaseClientProvider>
   );
 }
