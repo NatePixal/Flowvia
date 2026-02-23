@@ -1,3 +1,4 @@
+
 // src/app/layout.tsx
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
@@ -5,8 +6,6 @@ import './globals.css';
 import Script from 'next/script';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { GoogleAnalytics } from '@/components/analytics/google-analytics';
-import { FirebaseClientProvider } from '@/firebase';
-import { CurrencyProvider } from '@/lib/currency-provider';
 
 const inter = Inter({ subsets: ['latin'] });
 
