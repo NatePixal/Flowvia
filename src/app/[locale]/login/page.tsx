@@ -14,8 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useSignUp } from '@/firebase/useSignUp';
 import { Building, RefreshCw } from 'lucide-react';
+import { FirebaseClientProvider } from '@/firebase/client-provider';
 
-export default function LoginPage({ params }: { params: { locale: string } }) {
+function LoginContent({ params }: { params: { locale: string } }) {
   const { locale } = params;
   const router = useRouter();
   const { auth, user, sessionReady, isUserLoading, isCompanyMember, isDeveloper, refreshUserProfile } = useFirebase();
@@ -193,4 +194,12 @@ export default function LoginPage({ params }: { params: { locale: string } }) {
       </div>
     </div>
   );
+}
+
+export default function LoginPage({ params }: { params: { locale: string } }) {
+  return (
+    <FirebaseClientProvider>
+      <LoginContent params={params} />
+    </FirebaseClientProvider>
+  )
 }

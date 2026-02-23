@@ -1,8 +1,8 @@
 
+// src/app/[locale]/layout.tsx
 import type { Metadata } from 'next';
 import { I18nProviderClient } from '@/locales/client';
 import { locales } from '@/locales/settings';
-import { FirebaseClientProvider } from '@/firebase/client-provider';
 
 const title = 'FlowVia: All-In-One Business Command Center | ERP & Inventory Management';
 const description =
@@ -87,13 +87,11 @@ export default function LocaleLayout({
 }) {
   return (
     <I18nProviderClient locale={locale}>
-        <FirebaseClientProvider>
-          <script
-              type="application/ld+json"
-              dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-          />
-          {children}
-        </FirebaseClientProvider>
+      <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      {children}
     </I18nProviderClient>
   );
 }
