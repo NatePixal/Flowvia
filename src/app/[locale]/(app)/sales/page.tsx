@@ -414,7 +414,16 @@ export default function SalesPage() {
       if (issued?.invoiceId) {
         pdfResult = await generateInvoicePrintable({ companyId, invoiceId: issued.invoiceId });
         if (pdfResult?.downloadUrl) {
-          window.open(pdfResult.downloadUrl, '_blank', 'noopener,noreferrer');
+          const a = document.createElement('a');
+          a.href = pdfResult.downloadUrl;
+          a.style.display = 'none';
+          a.rel = 'noopener noreferrer';
+          // optional: if backend responseDisposition is set, browser will download directly
+          // a.download = `invoice-${issued?.invoiceNumber || issued?.invoiceId || 'file'}.pdf`;
+        
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
         }
       }
 
