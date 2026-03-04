@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://flowvia.live/sitemap.xml
