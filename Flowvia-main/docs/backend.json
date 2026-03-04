@@ -1,0 +1,549 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "type": "object",
+      "description": "Represents a user's profile information, linking them to a company and role.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The user's full name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "The user's phone number."
+        },
+        "companyId": {
+          "type": "string",
+          "description": "The ID of the company the user belongs to."
+        },
+        "role": {
+          "type": "string",
+          "description": "The user's role within the company.",
+          "enum": [
+            "admin",
+            "member",
+            "developer"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the user profile was created."
+        },
+        "isPaid": {
+            "type": "boolean",
+            "description": "Indicates if the user's subscription is active."
+        },
+        "status": {
+            "type": "string",
+            "description": "The status of the user account.",
+            "enum": ["active", "blocked"]
+        }
+      },
+      "required": [
+        "name",
+        "email",
+        "companyId",
+        "role",
+        "createdAt"
+      ]
+    },
+    "Company": {
+      "title": "Company",
+      "type": "object",
+      "description": "Represents a company or organization using the application.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the company."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the user who created and owns the company account."
+        },
+        "userCount": {
+          "type": "number",
+          "description": "The number of users expected to use the application for this company."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the company was created."
+        }
+      },
+      "required": [
+        "name",
+        "ownerId",
+        "createdAt"
+      ]
+    },
+    "Product": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Product",
+      "type": "object",
+      "description": "Represents a product in the inventory.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the product."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the product."
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the product."
+        },
+        "size": {
+          "type": "string",
+          "description": "Size of the product (if applicable)."
+        },
+        "color": {
+          "type": "string",
+          "description": "Color of the product (if applicable)."
+        },
+        "specifications": {
+          "type": "string",
+          "description": "Specifications of the product."
+        },
+        "quantityAvailable": {
+          "type": "number",
+          "description": "Quantity of the product currently available in stock."
+        },
+        "warehouseLocation": {
+          "type": "string",
+          "description": "Location of the product in the warehouse."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "quantityAvailable",
+        "warehouseLocation"
+      ]
+    },
+    "Sale": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Sale",
+      "type": "object",
+      "description": "Represents a sales transaction.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the sale."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Reference to Client. (Relationship: Client 1:N Sale)"
+        },
+        "productId": {
+          "type": "string",
+          "description": "Reference to Product. (Relationship: Product 1:N Sale)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity of the product sold in this transaction."
+        },
+        "salePrice": {
+          "type": "number",
+          "description": "Price at which the product was sold."
+        },
+        "paymentType": {
+          "type": "string",
+          "description": "Type of payment used for the sale (cash, partial, loan)."
+        },
+        "saleDate": {
+          "type": "string",
+          "description": "Date when the sale was made.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "clientId",
+        "productId",
+        "quantity",
+        "salePrice",
+        "paymentType",
+        "saleDate"
+      ]
+    },
+    "Client": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Client",
+      "type": "object",
+      "description": "Represents a client who purchases products.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the client."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the client."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "ClientLoan": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ClientLoan",
+      "type": "object",
+      "description": "Represents a loan issued to a client.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the loan."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Reference to Client. (Relationship: Client 1:N ClientLoan)"
+        },
+        "loanAmount": {
+          "type": "number",
+          "description": "Amount of the loan issued to the client."
+        },
+        "loanIssueDate": {
+          "type": "string",
+          "description": "Date when the loan was issued.",
+          "format": "date-time"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Date when the loan is due.",
+          "format": "date-time"
+        },
+        "amountPaid": {
+          "type": "number",
+          "description": "Amount that the client has paid towards the loan."
+        },
+        "remainingBalance": {
+          "type": "number",
+          "description": "Remaining balance of the loan."
+        }
+      },
+      "required": [
+        "id",
+        "clientId",
+        "loanAmount",
+        "loanIssueDate",
+        "dueDate",
+        "amountPaid",
+        "remainingBalance"
+      ]
+    },
+    "Supplier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Supplier",
+      "type": "object",
+      "description": "Represents a supplier or factory.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the supplier."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the supplier."
+        },
+        "factoryName": {
+          "type": "string",
+          "description": "Name of the factory associated with the supplier."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "SupplierPayment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SupplierPayment",
+      "type": "object",
+      "description": "Represents a payment made to a supplier.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the payment."
+        },
+        "supplierId": {
+          "type": "string",
+          "description": "Reference to Supplier. (Relationship: Supplier 1:N SupplierPayment)"
+        },
+        "payableAmount": {
+          "type": "number",
+          "description": "Total amount payable to the supplier."
+        },
+        "amountPaid": {
+          "type": "number",
+          "description": "Amount paid to the supplier."
+        },
+        "remainingBalance": {
+          "type": "number",
+          "description": "Remaining balance to be paid to the supplier."
+        },
+        "paymentDate": {
+          "type": "string",
+          "description": "Date when the payment was made.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "supplierId",
+        "payableAmount",
+        "amountPaid",
+        "remainingBalance",
+        "paymentDate"
+      ]
+    },
+    "InventoryLog": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InventoryLog",
+      "type": "object",
+      "description": "Represents a log entry for inventory changes.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the inventory log."
+        },
+        "productId": {
+          "type": "string",
+          "description": "Reference to Product. (Relationship: Product 1:N InventoryLog)"
+        },
+        "changeQuantity": {
+          "type": "number",
+          "description": "The amount that the inventory has changed"
+        },
+        "logDate": {
+          "type": "string",
+          "description": "Date when the change to inventory was recorded.",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason behind the inventory change."
+        }
+      },
+      "required": [
+        "id",
+        "productId",
+        "changeQuantity",
+        "logDate",
+        "reason"
+      ]
+    },
+    "Currency": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Currency",
+      "type": "object",
+      "description": "Represents a currency supported by the system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the currency."
+        },
+        "code": {
+          "type": "string",
+          "description": "Currency code (e.g., USD, EUR)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Currency name (e.g., US Dollar, Euro)."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Currency symbol (e.g., $, €)."
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "name",
+        "symbol"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": {
+            "$ref": "#/backend/entities/UserProfile"
+          },
+          "description": "Stores user profile information, linking them to a company and role."
+        }
+      },
+      {
+        "path": "/companies/{companyId}",
+        "definition": {
+          "entityName": "Company",
+          "schema": {
+            "$ref": "#/backend/entities/Company"
+          },
+          "description": "Stores company information. 'companyId' is the unique identifier for each company."
+        }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": {
+          "entityName": "Product",
+          "schema": {
+            "$ref": "#/backend/entities/Product"
+          },
+          "description": "Stores product information. 'productId' is the unique identifier for each product.",
+          "params": [
+            {
+              "name": "productId",
+              "description": "The unique identifier for the product."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/clients/{clientId}",
+        "definition": {
+          "entityName": "Client",
+          "schema": {
+            "$ref": "#/backend/entities/Client"
+          },
+          "description": "Stores client information. 'clientId' is the unique identifier for each client.",
+          "params": [
+            {
+              "name": "clientId",
+              "description": "The unique identifier for the client."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/clients/{clientId}/clientLoans/{clientLoanId}",
+        "definition": {
+          "entityName": "ClientLoan",
+          "schema": {
+            "$ref": "#/backend/entities/ClientLoan"
+          },
+          "description": "Stores loan information for each client. 'clientId' links the loan to the client. 'clientLoanId' is the unique identifier for each loan.",
+          "params": [
+            {
+              "name": "clientId",
+              "description": "The unique identifier for the client."
+            },
+            {
+              "name": "clientLoanId",
+              "description": "The unique identifier for the client loan."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/suppliers/{supplierId}",
+        "definition": {
+          "entityName": "Supplier",
+          "schema": {
+            "$ref": "#/backend/entities/Supplier"
+          },
+          "description": "Stores supplier information. 'supplierId' is the unique identifier for each supplier.",
+          "params": [
+            {
+              "name": "supplierId",
+              "description": "The unique identifier for the supplier."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/suppliers/{supplierId}/supplierPayments/{supplierPaymentId}",
+        "definition": {
+          "entityName": "SupplierPayment",
+          "schema": {
+            "$ref": "#/backend/entities/SupplierPayment"
+          },
+          "description": "Stores payment information for each supplier. 'supplierId' links the payment to the supplier. 'supplierPaymentId' is the unique identifier for each supplier payment.",
+          "params": [
+            {
+              "name": "supplierId",
+              "description": "The unique identifier for the supplier."
+            },
+            {
+              "name": "supplierPaymentId",
+              "description": "The unique identifier for the supplier payment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/products/{productId}/inventoryLogs/{inventoryLogId}",
+        "definition": {
+          "entityName": "InventoryLog",
+          "schema": {
+            "$ref": "#/backend/entities/InventoryLog"
+          },
+          "description": "Stores inventory log information for each product. 'productId' links the log to the product. 'inventoryLogId' is the unique identifier for each inventory log.",
+          "params": [
+            {
+              "name": "productId",
+              "description": "The unique identifier for the product."
+            },
+            {
+              "name": "inventoryLogId",
+              "description": "The unique identifier for the inventory log."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/currencies/{currencyId}",
+        "definition": {
+          "entityName": "Currency",
+          "schema": {
+            "$ref": "#/backend/entities/Currency"
+          },
+          "description": "Stores currency information. 'currencyId' is the unique identifier for each currency.",
+          "params": [
+            {
+              "name": "currencyId",
+              "description": "The unique identifier for the currency."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/sales/{saleId}",
+        "definition": {
+          "entityName": "Sale",
+          "schema": {
+            "$ref": "#/backend/entities/Sale"
+          },
+          "description": "Stores sales transaction information. 'saleId' is the unique identifier for each sale.",
+          "params": [
+            {
+              "name": "saleId",
+              "description": "The unique identifier for the sale."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to support FlowVia's requirements for warehouse, sales, financing, and multi-currency management. The design prioritizes authorization independence, clarity, and scalability. It leverages path-based ownership for user-related data and membership maps for collaborative data access.\n\nAuthorization Independence is achieved through denormalization.  For instance, while not explicitly required by the current schema, if sales records needed to be restricted to specific users, the user's ID or relevant role information would be denormalized directly into the `sales` documents to avoid using `get()` calls in security rules.  Similar denormalization strategies would apply to other entities if access control requires information from related entities.\n\nQAPs (Rules are not Filters) are supported by segregating data based on access requirements. Path-based ownership (`/clients/{clientId}/clientLoans/{clientLoanId}`) naturally provides secure `list` operations for a client's own loans. Membership Maps would be used if collaborative access was later required, ensuring that listing operations could be secured by checking for membership in the appropriate map within the listed documents.\n\nThe structure uses explicit state modeling (though the current data entities don't explicitly define a 'status' field, a `status` field should be added to relevant entities where state management is needed) and predictable schema to enhance debuggability. Standardized naming conventions are applied across all paths and fields."
+  }
+}

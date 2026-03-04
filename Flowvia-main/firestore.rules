@@ -1,0 +1,285 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ================= HELPERS ================= */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return isSignedIn() ? request.auth.token.role : null;
+    }
+
+    function getCompanyId() {
+      return isSignedIn() ? request.auth.token.companyId : null;
+    }
+
+    function isDeveloper() { return getRole() == 'developer'; }
+    function isAdmin() { return getRole() == 'admin'; }
+    function isManager() { return getRole() == 'manager'; }
+    function isAccounting() { return getRole() == 'accounting'; }
+    function isSales() { return getRole() == 'sales'; }
+
+    function isPrivilegedFinanceRole() {
+      return isDeveloper() || isAdmin() || isManager() || isAccounting();
+    }
+
+    function isCompanyMember(companyId) {
+      return isDeveloper() || (getCompanyId() != null && getCompanyId() == companyId);
+    }
+
+    function isRequestingOwnData(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incomingHasCompanyId(companyId) {
+      return request.resource.data.companyId == companyId;
+    }
+
+    function existingHasCompanyId(companyId) {
+      return resource.data.companyId == companyId;
+    }
+
+    // Prevent direct edits of financial/economic fields after invoice is locked.
+    function isEditingLockedSaleEconomicFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'clientId',
+        'clientName',
+        'productId',
+        'productName',
+        'productCode',
+        'quantity',
+        'salePrice',
+        'salePriceCurrency',
+        'discount',
+        'fx',
+        'vatCode',
+        'vat',
+        'taxSummary',
+        'totals',
+        'revenueMinor',
+        'revenueBaseMinor',
+        'costOfGoodsSoldMinor',
+        'costOfGoodsSoldBaseMinor',
+        'grossProfitMinor',
+        'grossProfitBaseMinor',
+        'invoice'
+      ]);
+    }
+
+    function saleLocked() {
+      return resource.data.invoice != null
+        && resource.data.invoice.locked == true;
+    }
+
+    /* ================= COMPANIES ROOT ================= */
+
+    match /companies/{companyId} {
+      // Company doc
+      allow get: if isCompanyMember(companyId);
+      allow update: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      allow create, delete: if false;
+
+      /* ---------- READ FALLBACK for any nested company doc ---------- */
+      // Safe read fallback. Writes are handled by explicit collection rules below.
+      match /{document=**} {
+        allow read: if isCompanyMember(companyId);
+      }
+
+      /* ---------- Core editable collections ---------- */
+
+      match /products/{productId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /sales/{saleId} {
+        allow create: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+
+        allow update: if isCompanyMember(companyId)
+                      && existingHasCompanyId(companyId)
+                      && incomingHasCompanyId(companyId)
+                      && !(saleLocked() && isEditingLockedSaleEconomicFields());
+
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /incomingProducts/{incomingId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /dailyExpenses/{expenseId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /inventoryLogs/{logId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /sellers/{sellerId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /employees/{employeeId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /clients/{clientId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+
+        match /ledger/{entryId} {
+          allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+          allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+        }
+      }
+
+      match /suppliers/{supplierId} {
+        allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+
+        match /ledger/{entryId} {
+          allow create, update: if isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+          allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+        }
+      }
+
+
+
+      /* ---------- Locations / Shops (editable by privileged roles) ---------- */
+
+      match /locations/{locationId} {
+        allow create, update: if isPrivilegedFinanceRole() && isCompanyMember(companyId) && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+
+        // Per-location stock is backend-managed (FIFO)
+        match /stock/{productId} {
+          allow create, update, delete: if false;
+          match /layers/{layerId} {
+            allow create, update, delete: if false;
+          }
+        }
+
+        // POS shifts are backend-managed (callable)
+        match /shifts/{shiftId} {
+          allow create, update, delete: if false;
+        }
+      }
+
+      // Backend-managed: transfers + stocktakes
+      match /transfers/{transferId} {
+        allow create, update, delete: if false;
+        match /items/{itemId} {
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /stocktakes/{stocktakeId} {
+        allow create, update, delete: if false;
+        match /lines/{lineId} {
+          allow create, update, delete: if false;
+        }
+      }
+
+      /* ---------- Settings ---------- */
+
+      match /settings/{settingsDocId} {
+        // Example docs: tax, company, etc.
+        allow create, update: if (isDeveloper() || isAdmin()) 
+                              && isCompanyMember(companyId)
+                              && incomingHasCompanyId(companyId);
+
+        allow delete: if false;
+      }
+
+      /* ---------- Backend-managed collections (read-only from client) ---------- */
+
+      match /invoices/{invoiceId} {
+        allow create, update, delete: if false; // created by callable functions only
+      }
+
+      match /vatReturns/{period} {
+        allow create, update, delete: if false; // backend only
+      }
+
+      match /auditLogs/{logId} {
+        allow create, update, delete: if false; // backend only
+      }
+
+      match /saleAdjustments/{adjustmentId} {
+        allow create, update, delete: if false; // backend only
+      }
+
+      match /agriConsumptions/{consumptionId} {
+        allow create, update, delete: if false; // backend only (callable)
+      }
+
+      match /agriBatches/{batchId} {
+        allow create, update, delete: if false; // backend only (callable)
+      }
+
+      match /settlements/{settlementId} {
+        allow create, update, delete: if false; // backend only (callable)
+      }
+
+      match /agriReports/{reportId} {
+        allow create, update, delete: if false; // backend-generated snapshots
+      }
+
+      /* ---------- Agri master data (editable) ---------- */
+
+      match /agriSeasons/{seasonId} {
+        allow create, update: if isPrivilegedFinanceRole()
+                              && isCompanyMember(companyId)
+                              && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+
+      match /agriFields/{fieldId} {
+        allow create, update: if isPrivilegedFinanceRole()
+                              && isCompanyMember(companyId)
+                              && incomingHasCompanyId(companyId);
+        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
+      }
+    }
+
+    /* ================= USERS ================= */
+
+    match /users/{userId} {
+      function sameCompanyExisting() {
+        return getCompanyId() != null && resource.data.companyId == getCompanyId();
+      }
+
+      function sameCompanyIncoming() {
+        return getCompanyId() != null && request.resource.data.companyId == getCompanyId();
+      }
+
+      // "read" covers both get and list/query and evaluates per-document.
+      allow read: if isDeveloper()
+                  || isRequestingOwnData(userId)
+                  || ((isAdmin() || isManager()) && sameCompanyExisting());
+
+      allow create: if isDeveloper()
+                    || ((isAdmin() || isManager()) && sameCompanyIncoming())
+                    || (isRequestingOwnData(userId) && sameCompanyIncoming());
+
+      allow update: if isDeveloper()
+                    || (isRequestingOwnData(userId)
+                        && !request.resource.data.diff(resource.data)
+                              .affectedKeys()
+                              .hasAny(['role', 'companyId', 'status', 'isPaid']))
+                    || ((isAdmin() || isManager())
+                        && sameCompanyExisting()
+                        && request.resource.data.companyId == resource.data.companyId);
+
+      allow delete: if false;
+    }
+  }
+}

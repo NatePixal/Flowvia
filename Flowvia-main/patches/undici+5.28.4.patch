@@ -1,0 +1,13 @@
+diff --git a/node_modules/undici/lib/web/fetch/util.js b/node_modules/undici/lib/web/fetch/util.js
+index 2d72f77..233857d 100644
+--- a/node_modules/undici/lib/web/fetch/util.js
++++ b/node_modules/undici/lib/web/fetch/util.js
+@@ -857,7 +857,7 @@ function createIterator (global, target, name, Ctor) {
+     next () {
+       // 1. Let O be this value.
+       // 2. If O is not an object, throw a TypeError.
+-      if (typeof this !== 'object' || this === null || !(#target in this)) {
++      if (typeof this !== 'object' || this === null || !(target in this)) {
+         throw new TypeError(
+           `'next' called on an object that does not implement interface ${name} Iterator.`
+         )
