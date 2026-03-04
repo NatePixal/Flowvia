@@ -8,7 +8,7 @@ exports.CURRENCY_DECIMALS = {
     "SAR": 2,
     "JOD": 3,
     "EGP": 2,
-    "UZS": 2,
+    "UZS": 0,
     "CNY": 2,
 };
 //# sourceMappingURL=currency-config.js.map
