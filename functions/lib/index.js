@@ -132,6 +132,7 @@ function fvDefaultTaxSettings(country, overrides) {
         SA: 'SAR',
         JO: 'JOD',
         EG: 'EGP',
+        UZ: 'UZS',
     };
     // Editable defaults — you can update these per company from the UI later.
     const rateByCountry = {
@@ -139,6 +140,7 @@ function fvDefaultTaxSettings(country, overrides) {
         SA: 0.15,
         JO: 0.16, // verify category-specific rules in your accountant setup
         EG: 0.14,
+        UZ: 0.12,
     };
     const vatRates = [
         { code: 'STD', rate: (_a = rateByCountry[country]) !== null && _a !== void 0 ? _a : 0, label: 'Standard' },

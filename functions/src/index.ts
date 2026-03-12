@@ -35,7 +35,7 @@ type FvVatCode = 'STD' | 'ZERO' | 'EXEMPT';
 type FvRoundingMode = 'HALF_UP' | 'BANKERS' | 'DOWN';
 
 type FvTaxSettings = {
-  country: 'AE' | 'SA' | 'JO' | 'EG';
+  country: 'AE' | 'SA' | 'JO' | 'EG' | 'UZ';
   currency: Currency;
   vatEnabled: boolean;
   vatRates: Array<{ code: FvVatCode | string; rate: number | null; label: string }>;
@@ -161,7 +161,7 @@ async function fvWriteAuditLog(
 }
 
 function fvDefaultTaxSettings(
-  country: 'AE' | 'SA' | 'JO' | 'EG',
+  country: 'AE' | 'SA' | 'JO' | 'EG' | 'UZ',
   overrides?: Partial<FvTaxSettings>
 ): FvTaxSettings {
   const currencyByCountry: Record<string, Currency> = {
@@ -169,6 +169,7 @@ function fvDefaultTaxSettings(
     SA: 'SAR',
     JO: 'JOD',
     EG: 'EGP',
+    UZ: 'UZS',
   };
 
   // Editable defaults — you can update these per company from the UI later.
@@ -177,6 +178,7 @@ function fvDefaultTaxSettings(
     SA: 0.15,
     JO: 0.16, // verify category-specific rules in your accountant setup
     EG: 0.14,
+    UZ: 0.12,
   };
 
   const vatRates = [
@@ -435,7 +437,7 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
 export const ensureTaxSettingsExists = functions.https.onCall(async (data, context) => {
   const auth = fvRequireRole(context, 'admin', 'developer');
   const companyId = fvGetCompanyId(context, data);
-  const country = (data?.country || 'AE') as 'AE' | 'SA' | 'JO' | 'EG';
+  const country = (data?.country || 'AE') as 'AE' | 'SA' | 'JO' | 'EG' | 'UZ';
 
   const ref = firestore.doc(`companies/${companyId}/settings/tax`);
   const snap = await ref.get();
@@ -741,10 +743,10 @@ function fvFmtMinor(minor: number, currency: Currency): string {
 async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
   const currency = (invoice.currency || 'USD') as Currency;
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
-  const chunks: Buffer[] = [];
+  const chunks: Uint8Array[] = [];
 
   return await new Promise<Buffer>((resolve, reject) => {
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('data', (chunk: Uint8Array) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 

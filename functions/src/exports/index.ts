@@ -2,7 +2,7 @@
 
 import * as functions from 'firebase-functions/v1';
 import { HttpsError } from 'firebase-functions/v1/https';
-import { db } from '../admin';
+import * as admin from 'firebase-admin';
 import { buildStatementWorkbook } from './statement-engine';
 import { buildClientStatement } from './builders/client';
 import { buildSupplierStatement } from './builders/supplier';
@@ -19,7 +19,7 @@ function requireAdminOrDev(auth: functions.https.CallableContext['auth']) {
 }
 
 async function getCompanyBaseCurrency(companyId: string): Promise<Currency> {
-  const snap = await db.doc(`companies/${companyId}`).get();
+  const snap = await admin.firestore().doc(`companies/${companyId}`).get();
   const base = (snap.data() as Company)?.baseCurrency;
   return (base || 'USD') as Currency;
 }
@@ -73,7 +73,7 @@ export const exportStatement = functions
         if (statementType === 'productMovement') {
             if (!targetId) throw new HttpsError('invalid-argument', 'Missing targetId for product statement.');
             const { summary, rows } = await buildProductMovementStatement({ companyId, productId: targetId, from, to, baseCurrency });
-            buf = await buildStatementWorkbook({ statementType: 'productMovement', summary, rows, baseCurrency: String(summary.baseCurrency), locale });
+            buf = await buildStatementWorkbook({ statementType: 'productMovement', summary, rows, baseCurrency: summary.baseCurrency, locale });
             filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
@@ -85,8 +85,7 @@ export const exportStatement = functions
                 from: dateFrom,
                 to: dateTo,
                 baseCurrency,
-                stockMode,
-                locale, // ✅ pass locale through
+                stockMode
             });
             
             return {
