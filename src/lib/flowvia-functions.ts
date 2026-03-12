@@ -15,7 +15,7 @@ async function callFn<TReq extends object, TRes = any>(name: string, payload: TR
 
 export function ensureTaxSettingsExists(input: {
   companyId: string;
-  country: 'AE' | 'SA' | 'JO' | 'EG';
+  country: 'AE' | 'SA' | 'JO' | 'EG' | 'UZ';
   force?: boolean;
   overrides?: Record<string, any>;
 }) {
