@@ -854,14 +854,7 @@ export const generateInvoicePdf = functions.https.onCall(async (data, context) =
   });
 
   const expiresAtMs = Date.now() + 1000 * 60 * 60 * 12;
-  const safeInvoiceNumber = String(invoice?.invoiceNumber || invoiceId).replace(/[^a-zA-Z0-9._-]/g, '_');
-
-  const [downloadUrl] = await file.getSignedUrl({
-    action: 'read',
-    expires: expiresAtMs,
-    responseDisposition: `attachment; filename="invoice-${safeInvoiceNumber}.pdf"`,
-    responseType: 'application/pdf',
-  });
+  const [downloadUrl] = await file.getSignedUrl({ action: 'read', expires: expiresAtMs });
 
   await invoiceRef.set(
     {

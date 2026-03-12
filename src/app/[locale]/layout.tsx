@@ -1,5 +1,3 @@
-
-// src/app/[locale]/layout.tsx
 import type { Metadata } from 'next';
 import { I18nProviderClient } from '@/locales/client';
 import { locales } from '@/locales/settings';

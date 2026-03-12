@@ -151,43 +151,6 @@ service cloud.firestore {
         }
       }
 
-
-
-      /* ---------- Locations / Shops (editable by privileged roles) ---------- */
-
-      match /locations/{locationId} {
-        allow create, update: if isPrivilegedFinanceRole() && isCompanyMember(companyId) && incomingHasCompanyId(companyId);
-        allow delete: if (isDeveloper() || isAdmin()) && isCompanyMember(companyId);
-
-        // Per-location stock is backend-managed (FIFO)
-        match /stock/{productId} {
-          allow create, update, delete: if false;
-          match /layers/{layerId} {
-            allow create, update, delete: if false;
-          }
-        }
-
-        // POS shifts are backend-managed (callable)
-        match /shifts/{shiftId} {
-          allow create, update, delete: if false;
-        }
-      }
-
-      // Backend-managed: transfers + stocktakes
-      match /transfers/{transferId} {
-        allow create, update, delete: if false;
-        match /items/{itemId} {
-          allow create, update, delete: if false;
-        }
-      }
-
-      match /stocktakes/{stocktakeId} {
-        allow create, update, delete: if false;
-        match /lines/{lineId} {
-          allow create, update, delete: if false;
-        }
-      }
-
       /* ---------- Settings ---------- */
 
       match /settings/{settingsDocId} {

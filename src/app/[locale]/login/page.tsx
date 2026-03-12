@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFirebase } from '@/firebase';
+import { useFirebase, FirebaseClientProvider } from '@/firebase';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useSignUp } from '@/firebase/useSignUp';
 import { Building, RefreshCw } from 'lucide-react';
-import { FirebaseClientProvider } from '@/firebase/client-provider';
+
 
 function LoginContent({ params }: { params: { locale: string } }) {
   const { locale } = params;
@@ -201,5 +200,5 @@ export default function LoginPage({ params }: { params: { locale: string } }) {
     <FirebaseClientProvider>
       <LoginContent params={params} />
     </FirebaseClientProvider>
-  )
+  );
 }
