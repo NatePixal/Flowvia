@@ -11,11 +11,12 @@ import { useFirebase } from '@/firebase';
 import { ensureTaxSettingsExists, generateVatReturn } from '@/lib/flowvia-functions';
 import { useToast } from '@/hooks/use-toast';
 
-const COUNTRY_BY_CURRENCY: Record<string, 'AE' | 'SA' | 'JO' | 'EG'> = {
+const COUNTRY_BY_CURRENCY: Record<string, 'AE' | 'SA' | 'JO' | 'EG' | 'UZ'> = {
   AED: 'AE',
   SAR: 'SA',
   JOD: 'JO',
   EGP: 'EG',
+  UZS: 'UZ',
 };
 
 function currentPeriod() {
@@ -28,7 +29,7 @@ function currentPeriod() {
 export function TaxVatTools() {
   const { companyId, companyBaseCurrency } = useFirebase();
   const { toast } = useToast();
-  const [country, setCountry] = useState<'AE' | 'SA' | 'JO' | 'EG'>(COUNTRY_BY_CURRENCY[companyBaseCurrency || ''] || 'AE');
+  const [country, setCountry] = useState<'AE' | 'SA' | 'JO' | 'EG' | 'UZ'>(COUNTRY_BY_CURRENCY[companyBaseCurrency || ''] || 'AE');
   const [period, setPeriod] = useState(currentPeriod());
   const [loadingSetup, setLoadingSetup] = useState(false);
   const [loadingReturn, setLoadingReturn] = useState(false);
@@ -91,6 +92,7 @@ export function TaxVatTools() {
                 <SelectItem value="SA">Saudi Arabia (SA)</SelectItem>
                 <SelectItem value="JO">Jordan (JO)</SelectItem>
                 <SelectItem value="EG">Egypt (EG)</SelectItem>
+                <SelectItem value="UZ">Uzbekistan (UZ)</SelectItem>
               </SelectContent>
             </Select>
           </div>

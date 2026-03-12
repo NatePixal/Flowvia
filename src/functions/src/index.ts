@@ -241,16 +241,17 @@ async function fvInferProductVatCode(
   return product.vatCode;
 }
 
-function fvComputeVatAmountsFromNet(
-  netMinor: number,
+function fvComputeVatAmountsFromGross(
+  grossMinor: number,
   vatRate: number,
   rounding: FvRoundingMode
 ) {
-  const vatMinor = fvRoundMinor(netMinor * vatRate, rounding);
+  const netMinor = fvRoundMinor(grossMinor / (1 + vatRate), rounding);
+  const vatMinor = grossMinor - netMinor;
   return {
     netMinor,
     vatMinor,
-    grossMinor: netMinor + vatMinor,
+    grossMinor,
   };
 }
 
@@ -321,8 +322,8 @@ async function fvRecomputeSaleVatAndTotals(companyId: string, saleRef: admin.fir
   const vatCode = (await fvInferProductVatCode(companyId, saleData.productId, saleData.vatCode)) || settings.defaultVatCode;
   const vatRate = fvResolveVatRate(settings, vatCode);
 
-  const netMinorRaw = Math.max(0, qty * unitPriceMinor - discountMinor);
-  const computed = fvComputeVatAmountsFromNet(netMinorRaw, vatRate, settings.roundingMode);
+  const grossMinorRaw = Math.max(0, qty * unitPriceMinor - discountMinor);
+  const computed = fvComputeVatAmountsFromGross(grossMinorRaw, vatRate, settings.roundingMode);
 
   const paidTotal = Number(saleData.totals?.paidTotal ?? saleData.paidMinor ?? 0);
   const dueTotal = Math.max(0, computed.grossMinor - paidTotal);
@@ -379,7 +380,7 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
   const settings = await fvLoadTaxSettings(companyId);
   const currency = (data.currency || settings.currency) as Currency;
 
-  const totalCostMinor =
+  const grossCostMinor =
     Number(data.totalCostMinor ?? 0) ||
     toMinor(Number(data.totalCost ?? 0), currency);
 
@@ -399,7 +400,7 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
   vatCode = vatCode || settings.defaultVatCode;
 
   const vatRate = fvResolveVatRate(settings, vatCode);
-  const amounts = fvComputeVatAmountsFromNet(totalCostMinor, vatRate, settings.roundingMode);
+  const amounts = fvComputeVatAmountsFromGross(grossCostMinor, vatRate, settings.roundingMode);
 
   const businessDate = fvToBusinessDate(data.date || data.incomeDate || data.recordedAt || data.createdAt || null);
   const businessDay = fvToBusinessDay(businessDate);
@@ -415,7 +416,7 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
         grossTotalMinor: amounts.grossMinor,
         currency,
       },
-      totalCostMinor: totalCostMinor,
+      totalCostMinor: grossCostMinor, // This field now represents the GROSS cost
       businessDate,
       businessDay,
       updatedAt: FvFieldValue.serverTimestamp(),
@@ -612,17 +613,17 @@ export const issueInvoiceForSale = functions.https.onCall(async (data, context) 
       };
     }
 
-    // Make sure sale has VAT/totals snapshot
-    // (Transaction can't call external writes, so we compute inline here)
+    // Make sure sale has VAT/totals snapshot (inclusive calculation)
     const qty = Number(sale.quantity ?? 0);
     const saleCurrency = (sale.salePriceCurrency || tax.currency) as Currency;
     const unitPriceMinor = toMinor(Number(sale.salePrice ?? 0), saleCurrency);
     const discountMinor = toMinor(Number(sale.discount ?? 0), saleCurrency);
     const vatCode = sale.vatCode || tax.defaultVatCode;
     const vatRate = fvResolveVatRate(tax, vatCode);
-    const netMinor = Math.max(0, qty * unitPriceMinor - discountMinor);
-    const vatMinor = fvRoundMinor(netMinor * vatRate, tax.roundingMode);
-    const grossMinor = netMinor + vatMinor;
+    
+    const grossMinor = Math.max(0, qty * unitPriceMinor - discountMinor);
+    const { netMinor, vatMinor } = fvComputeVatAmountsFromGross(grossMinor, vatRate, tax.roundingMode);
+
     const paidTotal = Number(sale.totals?.paidTotal ?? sale.paidMinor ?? 0);
     const dueTotal = Math.max(0, grossMinor - paidTotal);
 
@@ -938,7 +939,7 @@ export const generateVatReturn = functions.https.onCall(async (data, context) =>
   for (const doc of incomingSnap.docs) {
     const p = doc.data() as any;
     const vatCode = p.vat?.code || p.vatCode || tax.defaultVatCode;
-    const netMinor = Number(p.vat?.netTotalMinor ?? p.totalCostMinor ?? 0);
+    const netMinor = Number(p.vat?.netTotalMinor ?? 0); // Corrected from totalCostMinor
     const vatMinor = Number(p.vat?.vatTotalMinor ?? 0);
 
     if (!inputByCode[vatCode]) inputByCode[vatCode] = { netMinor: 0, vatMinor: 0 };
@@ -1015,18 +1016,16 @@ export const createSalesAdjustment = functions.https.onCall(async (data, context
     }
 
     const currentGross = Number(sale.totals?.grossTotal ?? sale.vat?.grossMinor ?? 0);
-    const currentVat = Number(sale.totals?.vatTotal ?? sale.vat?.vatMinor ?? 0);
-    const currentNet = Number(sale.totals?.netTotal ?? sale.vat?.netMinor ?? 0);
     const paidTotal = Number(sale.totals?.paidTotal ?? 0);
+    
+    const newGross = Math.max(0, currentGross + grossAdjustmentMinor);
 
     const vatRate = Number(sale.vat?.rate ?? fvResolveVatRate(tax, sale.vat?.code || sale.vatCode));
-    // If gross adjustment passed, derive net/vat proportionally using current tax ratio (best-effort)
-    const netAdjustmentMinor = fvRoundMinor(grossAdjustmentMinor / (1 + vatRate), tax.roundingMode);
-    const vatAdjustmentMinor = grossAdjustmentMinor - netAdjustmentMinor;
+    const { netMinor: newNet, vatMinor: newVat } = fvComputeVatAmountsFromGross(newGross, vatRate, tax.roundingMode);
+    
+    const netAdjustmentMinor = newNet - Number(sale.totals?.netTotal ?? 0);
+    const vatAdjustmentMinor = newVat - Number(sale.totals?.vatTotal ?? 0);
 
-    const newNet = Math.max(0, currentNet + netAdjustmentMinor);
-    const newVat = Math.max(0, currentVat + vatAdjustmentMinor);
-    const newGross = Math.max(0, currentGross + grossAdjustmentMinor);
     const newDue = Math.max(0, newGross - paidTotal);
 
     const adjRef = firestore.collection(`companies/${companyId}/saleAdjustments`).doc();
