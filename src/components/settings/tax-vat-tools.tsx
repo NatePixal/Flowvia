@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -112,13 +113,12 @@ export function TaxVatTools() {
           </Button>
         </div>
 
-        {lastResult?.summary && (
+        {lastResult && (
           <div className="rounded-md border p-3 text-sm space-y-1">
-            <div><strong>Currency:</strong> {lastResult.summary.currency}</div>
-            <div><strong>Sales VAT:</strong> {lastResult.summary.salesVatTotalMinor}</div>
-            <div><strong>Input VAT:</strong> {lastResult.summary.inputVatTotalMinor}</div>
-            <div><strong>Adjustments:</strong> {lastResult.summary.adjustmentsTotalMinor}</div>
-            <div><strong>Payable VAT:</strong> {lastResult.summary.payableVatMinor}</div>
+            <div><strong>Currency:</strong> {lastResult.currency}</div>
+            <div><strong>Sales VAT (Output):</strong> {lastResult.outputVat?.totalVatMinor ?? 0}</div>
+            <div><strong>Purchases VAT (Input):</strong> {lastResult.inputVat?.totalVatMinor ?? 0}</div>
+            <div><strong>Net VAT Payable:</strong> {lastResult.netVatMinor ?? 0}</div>
           </div>
         )}
       </CardContent>
