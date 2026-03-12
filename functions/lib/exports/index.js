@@ -4,7 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportStatement = void 0;
 const functions = require("firebase-functions/v1");
 const https_1 = require("firebase-functions/v1/https");
-const admin_1 = require("../admin");
+const admin = require("firebase-admin");
 const statement_engine_1 = require("./statement-engine");
 const client_1 = require("./builders/client");
 const supplier_1 = require("./builders/supplier");
@@ -20,7 +20,7 @@ function requireAdminOrDev(auth) {
 }
 async function getCompanyBaseCurrency(companyId) {
     var _a;
-    const snap = await admin_1.db.doc(`companies/${companyId}`).get();
+    const snap = await admin.firestore().doc(`companies/${companyId}`).get();
     const base = (_a = snap.data()) === null || _a === void 0 ? void 0 : _a.baseCurrency;
     return (base || 'USD');
 }
@@ -68,7 +68,7 @@ exports.exportStatement = functions
             if (!targetId)
                 throw new https_1.HttpsError('invalid-argument', 'Missing targetId for product statement.');
             const { summary, rows } = await (0, product_1.buildProductMovementStatement)({ companyId, productId: targetId, from, to, baseCurrency });
-            buf = await (0, statement_engine_1.buildStatementWorkbook)({ statementType: 'productMovement', summary, rows, baseCurrency: String(summary.baseCurrency), locale });
+            buf = await (0, statement_engine_1.buildStatementWorkbook)({ statementType: 'productMovement', summary, rows, baseCurrency: summary.baseCurrency, locale });
             filename = `product_statement_${targetId}_${dateFrom}_${dateTo}.xlsx`;
             return { filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", base64: bufferToBase64(buf), warnings: summary.warnings };
         }
@@ -80,8 +80,7 @@ exports.exportStatement = functions
                 from: dateFrom,
                 to: dateTo,
                 baseCurrency,
-                stockMode,
-                locale, // ✅ pass locale through
+                stockMode
             });
             return {
                 base64: xlsxBuffer.toString("base64"),

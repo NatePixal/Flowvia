@@ -23,10 +23,11 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
-    "@types/node": "^20.14.9",
+    "@types/exceljs": "^0.5.3",
+    "@types/node": "^22.19.15",
+    "@types/pdfkit": "^0.13.7",
     "firebase-functions-test": "^3.3.0",
-    "typescript": "^5.9.3",
-    "@types/pdfkit": "^0.13.7"
+    "typescript": "^5.9.3"
   },
   "private": true
 }
