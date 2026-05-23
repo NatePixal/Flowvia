@@ -10,10 +10,12 @@ const createJestConfig = nextJest({
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
+  modulePathIgnorePatterns: ['<rootDir>/.next', '<rootDir>/.firebase'],
   moduleNameMapper: {
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/app/(.*)$': '<rootDir>/src/app/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
+    '^@/firebase$': '<rootDir>/src/firebase/index.ts',
     '^@/firebase/(.*)$': '<rootDir>/src/firebase/$1',
   }
 }

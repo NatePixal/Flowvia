@@ -18,7 +18,7 @@ import { Building, RefreshCw } from 'lucide-react';
 function LoginContent({ params }: { params: { locale: string } }) {
   const { locale } = params;
   const router = useRouter();
-  const { auth, user, sessionReady, isUserLoading, isCompanyMember, isDeveloper, refreshUserProfile } = useFirebase();
+  const { auth, user, sessionReady, isUserLoading, isCompanyMember, isSystemAdmin, missingCompanyMembership, refreshUserProfile } = useFirebase();
   const { t } = useTranslation();
   const { toast } = useToast();
   const { signUp, loading: signUpLoading } = useSignUp();
@@ -37,10 +37,14 @@ function LoginContent({ params }: { params: { locale: string } }) {
 
   useEffect(() => {
     // Redirect only if the user is fully authorized.
-    if (sessionReady && user && (isCompanyMember || isDeveloper)) {
+    if (sessionReady && user && isSystemAdmin) {
+      router.replace(`/${locale}/super-admin`);
+      return;
+    }
+    if (sessionReady && user && isCompanyMember) {
       router.replace(`/${locale}/dashboard`);
     }
-  }, [sessionReady, user, isCompanyMember, isDeveloper, router, locale]);
+  }, [sessionReady, user, isCompanyMember, isSystemAdmin, router, locale]);
 
   const handleSignIn = async () => {
     setIsSigningIn(true);
@@ -90,7 +94,7 @@ function LoginContent({ params }: { params: { locale: string } }) {
   }
   
   const showLoadingSpinner = !sessionReady || isUserLoading;
-  const showAuthRequired = sessionReady && user && !isCompanyMember && !isDeveloper;
+  const showAuthRequired = sessionReady && user && !isCompanyMember && !isSystemAdmin;
   const showLoginForm = sessionReady && !user;
 
 
@@ -117,7 +121,11 @@ function LoginContent({ params }: { params: { locale: string } }) {
             <Card>
                 <CardHeader>
                     <CardTitle>{"Authorization Pending"}</CardTitle>
-                    <CardDescription>{"Your account is being set up. This might take a moment. Please click the button below to refresh."}</CardDescription>
+                    <CardDescription>
+                      {missingCompanyMembership
+                        ? "Your user profile exists, but company membership is missing. A system admin must run the members backfill or add your membership."
+                        : "Your account is being set up. This might take a moment. Please click the button below to refresh."}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Button onClick={handleForceRefresh} disabled={isRefreshing} className="w-full">

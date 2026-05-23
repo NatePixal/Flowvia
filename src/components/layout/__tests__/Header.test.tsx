@@ -4,20 +4,25 @@ import Header from '../header';
 // Mock dependencies
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
-  usePathname: () => '/',
+  usePathname: () => '/en/dashboard',
 }));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
 }));
 
-jest.mock('@/firebase/provider', () => ({
+jest.mock('@/firebase', () => ({
   useFirebase: () => ({ 
     auth: null,
     user: null,
+    userProfile: null,
+    company: null,
+    companyId: null,
     firestore: null,
-    refreshUserProfile: jest.fn()
+    refreshUserProfile: jest.fn(),
+    isUserLoading: false,
   }),
+  useDoc: () => ({ data: null, isLoading: false }),
 }));
 
 jest.mock('@/lib/currency-provider', () => ({
@@ -33,7 +38,7 @@ jest.mock('@/components/ui/sidebar', () => ({
 describe('Header', () => {
   it('renders the search input', () => {
     render(<Header />);
-    const searchInput = screen.getByPlaceholderText('Search');
+    const searchInput = screen.getByLabelText('Search');
     expect(searchInput).toBeInTheDocument();
   });
 });

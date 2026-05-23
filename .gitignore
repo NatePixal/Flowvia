@@ -7,3 +7,8 @@ functions/node_modules/
 dist/
 build/
 functions/lib/
+.tmp/
+firebase-debug.log
+firebase-debug.*.log
+*.tsbuildinfo
+

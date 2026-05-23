@@ -2,7 +2,7 @@
 'use client';
 
 import { useMemo, useCallback, useState } from 'react';
-import { collection, query, where, DocumentData } from 'firebase/firestore';
+import { collection, query, DocumentData } from 'firebase/firestore';
 import { db } from '@/firebase/client';
 import { useFirebase } from '@/firebase/provider';
 import { useCollection as useFirestoreCollection } from '@/firebase/firestore/use-collection';
@@ -23,7 +23,7 @@ export function useCompanyUsers(companyId?: string | null) {
 
     // The key is used here to create a new query object on demand
     console.log(`Refreshing users for company ${targetCompanyId}, key: ${refreshKey}`);
-    return query(collection(db, 'users'), where('companyId', '==', targetCompanyId));
+    return query(collection(db, 'companies', targetCompanyId, 'members'));
   }, [targetCompanyId, refreshKey]);
 
   const { data: users, loading, error } = useFirestoreCollection<WithId<UserProfile>>(usersQuery);

@@ -42,7 +42,7 @@ export function hasPermission(
   resource: Resource,
   permission: Permission
 ): boolean {
-  if (!userProfile || !userProfile.role) return false;
+  if (!userProfile || !userProfile.role || userProfile.status === 'blocked') return false;
 
   // Developer and Admin roles have super-access
   if (userProfile.role === 'developer' || userProfile.role === 'admin') {

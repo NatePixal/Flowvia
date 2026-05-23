@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -84,7 +84,11 @@ export default function AddIncomingProductDialog({
     if (open) resetForm();
   }, [open, resetForm]);
 
-  const debouncedLookup = useCallback(
+  // Use a ref to always have the latest products without re-creating the debounced fn
+  const productsRef = useRef(products);
+  useEffect(() => { productsRef.current = products; }, [products]);
+
+  const debouncedLookup = useRef(
     debounce((code: string) => {
       if (!code) {
         setIsExistingProduct(false);
@@ -93,7 +97,7 @@ export default function AddIncomingProductDialog({
         return;
       }
 
-      const existing = products.find((p) => p.productCode?.toUpperCase() === code);
+      const existing = productsRef.current.find((p) => p.productCode?.toUpperCase() === code);
       if (existing) {
         setIsExistingProduct(true);
         setProductName(existing.name);
@@ -113,9 +117,8 @@ export default function AddIncomingProductDialog({
         setProductName('');
         setCategory('');
       }
-    }, 250),
-    [products]
-  );
+    }, 250)
+  ).current;
 
   const handleProductCodeChange = (code: string) => {
     const normalizedCode = normalizeProductCode(code);

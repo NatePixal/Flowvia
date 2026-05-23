@@ -7,6 +7,8 @@ export type Currency = 'USD' | 'AED' | 'SAR' | 'JOD' | 'EGP' | 'UZS' | 'CNY';
 // User roles as defined in the application logic
 export type UserRole = 'developer' | 'admin' | 'manager' | 'sales' | 'accounting';
 
+export type PaymentProvider = 'payme' | 'click' | 'manual' | 'stripe';
+
 // A union type to represent a Firestore timestamp, which can be a Timestamp object
 // on read or a FieldValue sentinel on write.
 export type FirestoreTs = Timestamp | FieldValue;
@@ -47,6 +49,20 @@ export type Company = {
   userCount?: number;
   createdAt: FirestoreTs;
   baseCurrency?: Currency; // The company's primary reporting currency.
+  isPaid?: boolean;
+  subscriptionStatus?: 'active' | 'trialing' | 'past_due' | 'unpaid' | 'canceled' | 'expired' | 'inactive' | 'blocked' | 'refunded' | string;
+  forcedSubscriptionStatus?: string;
+  subscriptionProvider?: PaymentProvider;
+  subscriptionId?: string;
+  stripeCustomerId?: string;
+  subscriptionPeriodStart?: FirestoreTs;
+  subscriptionPeriodEnd?: FirestoreTs;
+  lastPaymentAt?: FirestoreTs;
+  cancelAtPeriodEnd?: boolean;
+  trialEndsAt?: FirestoreTs;
+  administrativeLock?: boolean;
+  subscriptionAccessLocked?: boolean;
+  ledgerAuditStatus?: 'verified' | 'needs_audit' | 'repair_required' | 'unknown';
   warehouseCapacity?: number;
   warehouseCapacityType?: 'units' | 'volume';
   memberUids?: string[];
@@ -380,6 +396,4 @@ export type RecentActivity = {
 export type ClientLoan = any;
 export type SupplierPayment = any;
 export type ClientTransaction = any;
-
-
 

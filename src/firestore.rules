@@ -2,102 +2,382 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    /* ================= HELPERS v5.2 ================= */
-    function isSignedIn() {
+    function isAuthenticated() {
       return request.auth != null;
     }
 
-    function getRole() {
-      return isSignedIn() ? request.auth.token.role : null;
+    function isSystemAdmin() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/systemAdmins/$(request.auth.uid));
     }
 
-    function getCompanyId() {
-      return isSignedIn() ? request.auth.token.companyId : null;
+    function memberDoc(companyId, userId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)/members/$(userId));
     }
 
-    function isDeveloper() {
-      return getRole() == 'developer';
-    }
-    
-    function isAdmin() {
-      return getRole() == 'admin';
+    function companyDoc(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId));
     }
 
-    function isRequestingOwnData(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isCompanyMember(companyId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid))
+        && memberDoc(companyId, request.auth.uid).data.status == 'active';
     }
 
-    function isOwnCompany(companyId) {
-        return getCompanyId() != null && getCompanyId() == companyId;
+    function getUserRole(companyId, userId) {
+      return memberDoc(companyId, userId).data.role;
     }
-    
-    // Helper to ensure new/updated data has a matching companyId in its fields
-    function dataHasMatchingCompanyId(companyId) {
+
+    function isCompanyAdmin(companyId) {
+      return isSystemAdmin()
+        || (isCompanyMember(companyId) && getUserRole(companyId, request.auth.uid) == 'admin');
+    }
+
+    function isCompanyAccounting(companyId) {
+      return isCompanyMember(companyId) && getUserRole(companyId, request.auth.uid) == 'accounting';
+    }
+
+    function isCompanyManager(companyId) {
+      return isCompanyMember(companyId) && getUserRole(companyId, request.auth.uid) == 'manager';
+    }
+
+    function isCompanySales(companyId) {
+      return isCompanyMember(companyId) && getUserRole(companyId, request.auth.uid) == 'sales';
+    }
+
+    function trialIsValid(companyId) {
+      return !('trialEndsAt' in companyDoc(companyId).data)
+        || companyDoc(companyId).data.trialEndsAt == null
+        || companyDoc(companyId).data.trialEndsAt > request.time;
+    }
+
+    function isCompanyActive(companyId) {
+      return companyDoc(companyId).data.administrativeLock != true
+        && companyDoc(companyId).data.subscriptionAccessLocked != true
+        && (
+          companyDoc(companyId).data.subscriptionStatus == 'active'
+          || (companyDoc(companyId).data.subscriptionStatus == 'trialing' && trialIsValid(companyId))
+        );
+    }
+
+    function hasCompanyWriteAccess(companyId) {
+      return isSystemAdmin()
+        || isCompanyAdmin(companyId)
+        || isCompanyAccounting(companyId)
+        || isCompanyManager(companyId);
+    }
+
+    function isProtectedUserFieldChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'role',
+        'companyId',
+        'status',
+        'isPaid',
+        'subscriptionStatus',
+        'blocked',
+        'administrativeLock'
+      ]);
+    }
+
+    function dataHasCompanyId(companyId) {
       return request.resource.data.companyId == companyId;
     }
-    
-    /* ================== RULES ================== */
+
+    function companyProtectedFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'isPaid',
+        'subscriptionStatus',
+        'subscriptionProvider',
+        'forcedSubscriptionStatus',
+        'subscriptionId',
+        'stripeCustomerId',
+        'subscriptionPeriodStart',
+        'subscriptionPeriodEnd',
+        'lastPaymentAt',
+        'cancelAtPeriodEnd',
+        'administrativeLock',
+        'subscriptionAccessLocked',
+        'ownerId'
+      ]);
+    }
+
+    function lockedSaleFinancialFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'clientId',
+        'clientName',
+        'productId',
+        'productName',
+        'productCode',
+        'quantity',
+        'salePrice',
+        'salePriceCurrency',
+        'discount',
+        'fx',
+        'vatCode',
+        'vat',
+        'taxSummary',
+        'totals',
+        'revenueMinor',
+        'revenueBaseMinor',
+        'costOfGoodsSoldMinor',
+        'costOfGoodsSoldBaseMinor',
+        'grossProfitMinor',
+        'grossProfitBaseMinor',
+        'invoice'
+      ]);
+    }
+
+    function saleIsFinanciallyLocked() {
+      return resource.data.invoice != null && resource.data.invoice.locked == true;
+    }
+
+    match /systemAdmins/{uid} {
+      allow get: if isAuthenticated() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if isSystemAdmin();
+    }
+
+    match /systemAuditLogs/{logId} {
+      allow create, read: if isSystemAdmin();
+      allow update, delete: if false;
+    }
+
+    match /companyInvites/{inviteId} {
+      allow get: if isSystemAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      allow list: if isSystemAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      function sameCompanyExisting() {
+        return isAuthenticated()
+          && resource.data.companyId is string
+          && isCompanyMember(resource.data.companyId);
+      }
+
+      allow get: if isSystemAdmin()
+        || (isAuthenticated() && request.auth.uid == userId)
+        || (sameCompanyExisting() && isCompanyAdmin(resource.data.companyId));
+      allow list: if isSystemAdmin();
+      allow create: if isSystemAdmin();
+      allow update: if isSystemAdmin()
+        || (isAuthenticated()
+          && request.auth.uid == userId
+          && !isProtectedUserFieldChanged());
+      allow delete: if false;
+    }
 
     match /companies/{companyId} {
-      // Allow developers or members of the company to get the company document
-      allow get: if isDeveloper() || isOwnCompany(companyId);
-      // Allow developers or company admins to update company details
-      allow update: if isDeveloper() || (isAdmin() && isOwnCompany(companyId));
-      // Disallow direct creation/deletion
-      allow create, delete: if false;
-
-      // --- DEEP NESTED RULE for ALL company sub-collections ---
-      match /{document=**} {
-        // Read access for developers or company members
-        allow read: if isDeveloper() || isOwnCompany(companyId);
-        
-        // Write access for developers or company members, BUT ONLY if the data includes the correct companyId
-        allow create, update: if (isDeveloper() || isOwnCompany(companyId)) && dataHasMatchingCompanyId(companyId);
-
-        // Delete access for developers or company admins
-        allow delete: if isDeveloper() || (isAdmin() && isOwnCompany(companyId));
-      }
-    }
-    
-    match /users/{userId} {
-
-      function sameCompanyExisting() {
-        return getCompanyId() != null && resource.data.companyId == getCompanyId();
-      }
-
-      function sameCompanyIncoming() {
-        return getCompanyId() != null && request.resource.data.companyId == getCompanyId();
-      }
-
-      // Read a single user profile
-      allow get: if isDeveloper()
-                || isRequestingOwnData(userId)
-                || (isAdmin() && get(/databases/$(database)/documents/users/$(userId)).data.companyId == getCompanyId());
-
-      // List/query users
-      // NOTE: Your admin queries MUST include: .where("companyId", "==", user.companyId)
-      // This rule is intentionally broad because Firestore rules are not filters.
-      // The client MUST apply the where clause for security to be effective.
-      allow list: if isDeveloper() || isAdmin();
-
-      // Create a user profile
-      allow create: if isDeveloper()
-                   || (isAdmin() && sameCompanyIncoming())
-                   || (isRequestingOwnData(userId) && sameCompanyIncoming());
-
-      // Update a user profile
-      allow update: if isDeveloper()
-                   || (isRequestingOwnData(userId)
-                       && !request.resource.data.diff(resource.data)
-                             .affectedKeys()
-                             .hasAny(['role', 'companyId', 'status', 'isPaid']))
-                   || (isAdmin()
-                       && sameCompanyExisting()
-                       && request.resource.data.companyId == resource.data.companyId);
-
-      // Deletion should be backend-only
+      allow get: if isSystemAdmin() || isCompanyMember(companyId);
+      allow list: if isSystemAdmin();
+      allow create: if isSystemAdmin();
+      allow update: if isSystemAdmin()
+        || (isCompanyAdmin(companyId) && !companyProtectedFieldsChanged());
       allow delete: if false;
+
+      match /members/{uid} {
+        function protectedMemberFieldsChanged() {
+          return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'role',
+            'companyId',
+            'status',
+            'isPaid',
+            'subscriptionStatus',
+            'blocked'
+          ]);
+        }
+
+        allow get: if isSystemAdmin()
+          || (isAuthenticated() && request.auth.uid == uid)
+          || isCompanyAdmin(companyId);
+        allow list: if isSystemAdmin() || isCompanyAdmin(companyId);
+        allow create: if isSystemAdmin()
+          || (isCompanyAdmin(companyId) && dataHasCompanyId(companyId));
+        allow update: if isSystemAdmin()
+          || (
+            isCompanyAdmin(companyId)
+            && dataHasCompanyId(companyId)
+            && !(request.auth.uid == uid && protectedMemberFieldsChanged())
+          );
+        allow delete: if false;
+      }
+
+      match /products/{productId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId);
+      }
+
+      match /sales/{saleId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanySales(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow update: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanySales(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId)
+          && resource.data.companyId == companyId
+          && dataHasCompanyId(companyId)
+          && !(saleIsFinanciallyLocked() && lockedSaleFinancialFieldsChanged());
+        allow delete: if false;
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /dailyExpenses/{expenseId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /incomingProducts/{incomingId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /inventoryLogs/{logId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow update, delete: if false;
+      }
+
+      match /clients/{clientId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanySales(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+
+        match /ledger/{entryId} {
+          allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /suppliers/{supplierId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if (isCompanyAdmin(companyId) || isCompanyManager(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+
+        match /ledger/{entryId} {
+          allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /sellers/{sellerId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if (isCompanyAdmin(companyId) || isCompanyManager(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /employees/{employeeId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /settings/{settingsDocId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if (isCompanyAdmin(companyId) || isCompanyAccounting(companyId))
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /analytics/{document=**} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /invoices/{invoiceId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /vatReturns/{period} {
+        allow read: if isSystemAdmin() || ((isCompanyAdmin(companyId) || isCompanyAccounting(companyId)) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if isSystemAdmin() || ((isCompanyAdmin(companyId) || isCompanyAccounting(companyId)) && isCompanyActive(companyId));
+        allow create: if hasCompanyWriteAccess(companyId) && dataHasCompanyId(companyId);
+        allow update, delete: if false;
+      }
+
+      match /subscriptionEvents/{eventId} {
+        allow read: if isSystemAdmin() || isCompanyAdmin(companyId);
+        allow create, update, delete: if false;
+      }
+
+      match /saleAdjustments/{adjustmentId} {
+        allow read: if isSystemAdmin() || ((isCompanyAdmin(companyId) || isCompanyAccounting(companyId)) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /agriSeasons/{seasonId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /agriFields/{fieldId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update: if hasCompanyWriteAccess(companyId)
+          && isCompanyActive(companyId)
+          && dataHasCompanyId(companyId);
+        allow delete: if false;
+      }
+
+      match /agriConsumptions/{consumptionId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /agriBatches/{batchId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /settlements/{settlementId} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /agriReports/{reportId} {
+        allow read: if isSystemAdmin() || ((isCompanyAdmin(companyId) || isCompanyAccounting(companyId)) && isCompanyActive(companyId));
+        allow create, update, delete: if false;
+      }
+
+      match /{document=**} {
+        allow read: if isSystemAdmin() || (isCompanyMember(companyId) && isCompanyActive(companyId));
+        allow write: if false;
+      }
     }
   }
 }

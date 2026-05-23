@@ -57,7 +57,7 @@ export async function generateMetadata({ params: { locale } }: { params: { local
       icon: '/favicon.ico',
       apple: '/apple-touch-icon.png', // Recommended: Add these images to /public
     },
-    manifest: '/site.webmanifest', // Recommended: Add this file to /public
+    manifest: undefined, // Declared in root layout to avoid /en/site.webmanifest path issue
   };
 }
 

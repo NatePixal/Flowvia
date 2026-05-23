@@ -4,12 +4,30 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import { UserRole, Currency } from './types';
 import { toMinor, fromMinor, convertMinorToBase, convertBaseToMinor } from './money';
+import {
+  parseBoolean,
+  parseString,
+  resolveCompanyAccess,
+  sanitizeForDocument,
+} from './security';
 const PDFDocument = require('pdfkit');
 
 if (!admin.apps.length) {
     admin.initializeApp();
 }
-const firestore = admin.firestore();
+let _db: admin.firestore.Firestore | null = null;
+const firestore = new Proxy({} as admin.firestore.Firestore, {
+  get(target, prop) {
+    if (!_db) {
+      _db = admin.firestore();
+    }
+    const value = (_db as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(_db);
+    }
+    return value;
+  }
+});
 
 
 /**
@@ -68,42 +86,14 @@ function fvRequireAuth(context: functions.https.CallableContext) {
   return context.auth;
 }
 
-function fvRequireRole(
+async function fvResolveAccess(
   context: functions.https.CallableContext,
-  ...roles: UserRole[]
+  data: any,
+  roles: UserRole[],
+  options: { allowInactiveSubscription?: boolean; allowAdministrativeLock?: boolean } = {}
 ) {
-  const auth = fvRequireAuth(context);
-  const role = (auth.token.role as UserRole) ?? 'sales';
-  if (!roles.includes(role)) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      `Requires one of roles: ${roles.join(', ')}`
-    );
-  }
-  return auth;
-}
-
-function fvGetCompanyId(context: functions.https.CallableContext, data: any): string {
-  const auth = fvRequireAuth(context);
-  const role = (auth.token.role as UserRole) ?? 'sales';
-  const claimCompanyId = (auth.token as any).companyId as string | undefined;
-  const requested = data?.companyId as string | undefined;
-
-  if (role === 'developer') {
-    const cid = requested || claimCompanyId;
-    if (!cid) {
-      throw new functions.https.HttpsError('invalid-argument', 'companyId is required.');
-    }
-    return cid;
-  }
-
-  if (!claimCompanyId) {
-    throw new functions.https.HttpsError('failed-precondition', 'No companyId in token.');
-  }
-  if (requested && requested !== claimCompanyId) {
-    throw new functions.https.HttpsError('permission-denied', 'Cannot access another company.');
-  }
-  return claimCompanyId;
+  const companyId = typeof data?.companyId === 'string' ? data.companyId : undefined;
+  return resolveCompanyAccess(context, companyId, roles, options);
 }
 
 function fvToBusinessDate(value: any): string {
@@ -207,6 +197,32 @@ function fvDefaultTaxSettings(
       : { system: null, phase: 'READY_ONLY' },
     ...overrides,
   };
+}
+
+function fvParseCountry(value: unknown): 'AE' | 'SA' | 'JO' | 'EG' | 'UZ' {
+  const country = String(value || 'AE').trim().toUpperCase();
+  if (!['AE', 'SA', 'JO', 'EG', 'UZ'].includes(country)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Unsupported tax country code.');
+  }
+  return country as 'AE' | 'SA' | 'JO' | 'EG' | 'UZ';
+}
+
+function fvValidateTaxSettings(settings: FvTaxSettings): FvTaxSettings {
+  if (!['HALF_UP', 'BANKERS', 'DOWN'].includes(settings.roundingMode)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Unsupported VAT rounding mode.');
+  }
+  if (!Array.isArray(settings.vatRates) || settings.vatRates.length === 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'At least one VAT rate is required.');
+  }
+  for (const row of settings.vatRates) {
+    if (!row.code || typeof row.code !== 'string') {
+      throw new functions.https.HttpsError('invalid-argument', 'VAT rate code is required.');
+    }
+    if (row.rate !== null && (!Number.isFinite(Number(row.rate)) || Number(row.rate) < 0 || Number(row.rate) > 1)) {
+      throw new functions.https.HttpsError('invalid-argument', 'VAT rate must be between 0 and 1.');
+    }
+  }
+  return settings;
 }
 
 async function fvLoadTaxSettings(companyId: string): Promise<FvTaxSettings> {
@@ -436,9 +452,10 @@ async function fvRecomputeIncomingVat(companyId: string, ref: admin.firestore.Do
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ensureTaxSettingsExists = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'developer');
-  const companyId = fvGetCompanyId(context, data);
-  const country = (data?.country || 'AE') as 'AE' | 'SA' | 'JO' | 'EG' | 'UZ';
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
+  const country = fvParseCountry(data?.country);
 
   const ref = firestore.doc(`companies/${companyId}/settings/tax`);
   const snap = await ref.get();
@@ -447,7 +464,7 @@ export const ensureTaxSettingsExists = functions.https.onCall(async (data, conte
     return { success: true, created: false, settings: snap.data() };
   }
 
-  const defaults = fvDefaultTaxSettings(country, data?.overrides || {});
+  const defaults = fvValidateTaxSettings(fvDefaultTaxSettings(country, data?.overrides || {}));
   await ref.set(
     {
       companyId,
@@ -574,33 +591,42 @@ export const recomputeIncomingVatAndTotals = functions.firestore
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const issueInvoiceForSale = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
-  const companyId = fvGetCompanyId(context, data);
-  const saleId = data?.saleId as string;
-
-  if (!saleId) {
-    throw new functions.https.HttpsError('invalid-argument', 'saleId is required');
-  }
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'manager', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
+  const saleId = parseString(data?.saleId, 'saleId');
 
   const saleRef = firestore.doc(`companies/${companyId}/sales/${saleId}`);
   const companyRef = firestore.doc(`companies/${companyId}`);
   const taxRef = firestore.doc(`companies/${companyId}/settings/tax`);
 
   const result = await firestore.runTransaction(async (tx) => {
-    const [saleSnap, companySnap, taxSnap] = await Promise.all([
+    const existingInvoiceQuery = firestore
+      .collection(`companies/${companyId}/invoices`)
+      .where('sourceType', '==', 'SALE')
+      .where('sourceId', '==', saleId)
+      .limit(1);
+    const [saleSnap, companySnap, taxSnap, existingInvoiceSnap] = await Promise.all([
       tx.get(saleRef),
       tx.get(companyRef),
       tx.get(taxRef),
+      tx.get(existingInvoiceQuery),
     ]);
 
     if (!saleSnap.exists) {
       throw new functions.https.HttpsError('not-found', 'Sale not found');
+    }
+    if (!companySnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Company not found');
     }
     if (!taxSnap.exists) {
       throw new functions.https.HttpsError('failed-precondition', 'Tax settings not found');
     }
 
     const sale = saleSnap.data() as any;
+    if (sale.companyId && sale.companyId !== companyId) {
+      throw new functions.https.HttpsError('permission-denied', 'Sale belongs to another company.');
+    }
     const company = (companySnap.data() || {}) as any;
     const tax = taxSnap.data() as FvTaxSettings;
 
@@ -610,6 +636,25 @@ export const issueInvoiceForSale = functions.https.onCall(async (data, context) 
         invoiceNumber: sale.invoice.invoiceNumber,
         reused: true,
       };
+    }
+
+    if (!existingInvoiceSnap.empty) {
+      const existingInvoice = existingInvoiceSnap.docs[0];
+      const invoiceNumber = existingInvoice.data().invoiceNumber || existingInvoice.id;
+      tx.set(
+        saleRef,
+        {
+          invoice: {
+            invoiceId: existingInvoice.id,
+            invoiceNumber,
+            issuedAt: existingInvoice.data().issueDate || FvFieldValue.serverTimestamp(),
+            locked: true,
+          },
+          updatedAt: FvFieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return { invoiceId: existingInvoice.id, invoiceNumber, reused: true };
     }
 
     // Make sure sale has VAT/totals snapshot
@@ -756,7 +801,7 @@ async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
     const totals = invoice.totals || {};
     const lines = Array.isArray(invoice.lineItems) ? invoice.lineItems : [];
 
-    doc.fontSize(20).text(`Invoice ${invoice.invoiceNumber || ''}`, { align: 'left' });
+    doc.fontSize(20).text(`Invoice ${sanitizeForDocument(invoice.invoiceNumber || '', 80)}`, { align: 'left' });
     doc.moveDown(0.3);
     doc.fontSize(10).fillColor('#444').text(`Issue Date: ${String(invoice.issueDate || '').slice(0, 10)}`);
     doc.text(`Country: ${invoice.country || ''}`);
@@ -766,15 +811,15 @@ async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
 
     doc.fontSize(11).font('Helvetica-Bold').text('Seller');
     doc.font('Helvetica').fontSize(10);
-    doc.text(seller.legalName || '');
-    if (seller.taxId) doc.text(`Tax ID: ${seller.taxId}`);
-    if (seller.address) doc.text(`Address: ${seller.address}`);
+    doc.text(sanitizeForDocument(seller.legalName || '', 160));
+    if (seller.taxId) doc.text(`Tax ID: ${sanitizeForDocument(seller.taxId, 80)}`);
+    if (seller.address) doc.text(`Address: ${sanitizeForDocument(seller.address, 200)}`);
 
     doc.moveDown(0.6);
     doc.fontSize(11).font('Helvetica-Bold').text('Buyer');
     doc.font('Helvetica').fontSize(10);
-    doc.text(buyer.name || '');
-    if (buyer.clientId) doc.text(`Client ID: ${buyer.clientId}`);
+    doc.text(sanitizeForDocument(buyer.name || '', 160));
+    if (buyer.clientId) doc.text(`Client ID: ${sanitizeForDocument(buyer.clientId, 80)}`);
 
     doc.moveDown();
 
@@ -802,7 +847,7 @@ async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
     y = drawRow(y, ['Item', 'Qty', 'Unit', 'Net', 'VAT', 'Gross'], true);
     for (const l of lines) {
       y = drawRow(y, [
-        String(l.name || ''),
+        sanitizeForDocument(l.name || '', 160),
         String(l.qty ?? 0),
         fvFmtMinor(Number(l.unitPriceMinor ?? 0), currency),
         fvFmtMinor(Number(l.netMinor ?? 0), currency),
@@ -832,12 +877,10 @@ async function fvInvoicePdfBuffer(invoice: any): Promise<Buffer> {
 }
 
 export const generateInvoicePdf = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
-  const companyId = fvGetCompanyId(context, data);
-  const invoiceId = data?.invoiceId as string;
-  if (!invoiceId) {
-    throw new functions.https.HttpsError('invalid-argument', 'invoiceId is required');
-  }
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'manager', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
+  const invoiceId = parseString(data?.invoiceId, 'invoiceId');
 
   const invoiceRef = firestore.doc(`companies/${companyId}/invoices/${invoiceId}`);
   const snap = await invoiceRef.get();
@@ -845,6 +888,9 @@ export const generateInvoicePdf = functions.https.onCall(async (data, context) =
     throw new functions.https.HttpsError('not-found', 'Invoice not found');
   }
   const invoice = snap.data() as any;
+  if (invoice.companyId && invoice.companyId !== companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Invoice belongs to another company.');
+  }
 
   const pdfBuffer = await fvInvoicePdfBuffer(invoice);
   const bucket = admin.storage().bucket();
@@ -892,12 +938,10 @@ export const generateInvoicePdf = functions.https.onCall(async (data, context) =
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const generateVatReturn = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'developer');
-  const companyId = fvGetCompanyId(context, data);
-  const period = data?.period as string;
-  if (!period) {
-    throw new functions.https.HttpsError('invalid-argument', 'period is required (YYYY-MM)');
-  }
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
+  const period = parseString(data?.period, 'period');
 
   const tax = await fvLoadTaxSettings(companyId);
   const { startDate, endDate, startDay, endDay } = fvMonthRange(period);
@@ -988,14 +1032,15 @@ export const generateVatReturn = functions.https.onCall(async (data, context) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createSalesAdjustment = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'developer');
-  const companyId = fvGetCompanyId(context, data);
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
 
-  const saleId = data?.saleId as string;
+  const saleId = parseString(data?.saleId, 'saleId');
   const grossAdjustmentMinor = Number(data?.grossAdjustmentMinor ?? 0); // negative for credit, positive for debit
-  const reason = String(data?.reason || '').trim();
+  const reason = parseString(data?.reason, 'reason');
 
-  if (!saleId || !Number.isFinite(grossAdjustmentMinor) || grossAdjustmentMinor === 0 || !reason) {
+  if (!Number.isFinite(grossAdjustmentMinor) || grossAdjustmentMinor === 0) {
     throw new functions.https.HttpsError(
       'invalid-argument',
       'saleId, grossAdjustmentMinor (non-zero), and reason are required'
@@ -1075,8 +1120,9 @@ export const createSalesAdjustment = functions.https.onCall(async (data, context
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createHarvestBatch = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'manager', 'accounting', 'developer');
-  const companyId = fvGetCompanyId(context, data);
+  const access = await fvResolveAccess(context, data, ['admin', 'manager', 'accounting', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
 
   const {
     seasonId,
@@ -1128,10 +1174,12 @@ export const createHarvestBatch = functions.https.onCall(async (data, context) =
 });
 
 export const recordAgriConsumption = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'manager', 'accounting', 'developer');
-  const companyId = fvGetCompanyId(context, data);
+  const access = await fvResolveAccess(context, data, ['admin', 'manager', 'accounting', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
 
   const { seasonId, fieldId, date, lines, decrementInventory = false } = data || {};
+  const shouldDecrementInventory = decrementInventory === undefined ? false : parseBoolean(decrementInventory, 'decrementInventory');
   if (!seasonId || !fieldId || !Array.isArray(lines) || lines.length === 0) {
     throw new functions.https.HttpsError(
       'invalid-argument',
@@ -1183,10 +1231,10 @@ export const recordAgriConsumption = functions.https.onCall(async (data, context
         costTotal: costTotalMinor,
       });
 
-      if (decrementInventory === true) {
+      if (shouldDecrementInventory === true) {
         const currentQty = Number(p.quantity ?? 0);
         tx.update(productRef, {
-          quantity: currentQty - qty, // can go negative if you allow it
+          quantity: Math.max(0, currentQty - qty),
           updatedAt: FvFieldValue.serverTimestamp(),
         });
 
@@ -1246,21 +1294,18 @@ export const recordAgriConsumption = functions.https.onCall(async (data, context
 });
 
 export const confirmSettlement = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
-  const companyId = fvGetCompanyId(context, data);
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'manager', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
 
-  const saleId = data?.saleId as string;
+  const saleId = parseString(data?.saleId, 'saleId');
   const deductions = Array.isArray(data?.deductions) ? data.deductions : [];
   const date = data?.date;
 
-  if (!saleId) {
-    throw new functions.https.HttpsError('invalid-argument', 'saleId is required');
-  }
-
   const normalizedDeductions = deductions.map((d: any) => ({
-    type: String(d.type || 'OTHER'),
+    type: sanitizeForDocument(d.type || 'OTHER', 60),
     amountMinor: Number(d.amountMinor ?? 0),
-    note: d.note ? String(d.note) : null,
+    note: d.note ? sanitizeForDocument(d.note, 240) : null,
   }));
 
   if (normalizedDeductions.some((d: any) => !Number.isFinite(d.amountMinor) || d.amountMinor < 0)) {
@@ -1354,13 +1399,10 @@ export const confirmSettlement = functions.https.onCall(async (data, context) =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const exportSeasonPnl = functions.https.onCall(async (data, context) => {
-  const auth = fvRequireRole(context, 'admin', 'accounting', 'manager', 'developer');
-  const companyId = fvGetCompanyId(context, data);
-  const seasonId = data?.seasonId as string;
-
-  if (!seasonId) {
-    throw new functions.https.HttpsError('invalid-argument', 'seasonId is required');
-  }
+  const access = await fvResolveAccess(context, data, ['admin', 'accounting', 'manager', 'developer']);
+  const auth = { uid: access.uid };
+  const companyId = access.companyId;
+  const seasonId = parseString(data?.seasonId, 'seasonId');
 
   const [seasonSnap, consumptionsSnap, salesSnap, settlementsSnap] = await Promise.all([
     firestore.doc(`companies/${companyId}/agriSeasons/${seasonId}`).get(),

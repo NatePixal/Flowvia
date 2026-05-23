@@ -1,0 +1,17 @@
+{
+  "name": "FlowVia",
+  "short_name": "FlowVia",
+  "description": "FlowVia business command center",
+  "start_url": "/en/login",
+  "display": "standalone",
+  "background_color": "#0B0F19",
+  "theme_color": "#10B981",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

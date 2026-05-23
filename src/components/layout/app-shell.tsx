@@ -30,13 +30,26 @@ const AppShellFallback = () => {
 };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const { sessionReady, user, isCompanyMember, isDeveloper, missingCompanyScope, needsOnboarding } = useFirebase();
+  const { sessionReady, user, isCompanyMember, isSystemAdmin, missingCompanyScope, missingCompanyMembership, needsOnboarding, company, isBlocked } = useFirebase();
 
   if (!sessionReady) return <AppShellFallback />;
 
   // Signed-out users should never be stuck inside the app shell.
   // The (app) layout will redirect them to /login.
   if (!user) return <AppShellFallback />;
+
+  if (isBlocked) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background p-6">
+        <div className="max-w-md space-y-3 text-center">
+          <h1 className="text-lg font-semibold">User access blocked</h1>
+          <p className="text-sm text-muted-foreground">
+            Your account is blocked for this workspace. Contact a company admin or platform administrator.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (missingCompanyScope) {
     return (
@@ -51,14 +64,51 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (missingCompanyMembership) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background p-6">
+        <div className="max-w-md space-y-3 text-center">
+          <h1 className="text-lg font-semibold">Company membership missing</h1>
+          <p className="text-sm text-muted-foreground">
+            Your profile has a companyId, but the required company member record is missing. Ask a system administrator to run the members backfill.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Handle case where user is not a developer or member of a company and is not currently in an onboarding flow
-  if (!isCompanyMember && !isDeveloper && !needsOnboarding) {
+  if (!isCompanyMember && !isSystemAdmin && !needsOnboarding) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background p-6">
         <div className="max-w-md space-y-3 text-center">
           <h1 className="text-lg font-semibold">Access restricted</h1>
           <p className="text-sm text-muted-foreground">
             Your account does not have access to any company workspace.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const subscriptionStatus = company?.subscriptionStatus || (company?.isPaid ? 'active' : 'inactive');
+  const trialEndsAt = (company as any)?.trialEndsAt?.toDate?.() ?? null;
+  const trialValid = !trialEndsAt || trialEndsAt.getTime() > Date.now();
+  const companyUsable =
+    isSystemAdmin ||
+    (
+      company?.administrativeLock !== true &&
+      (company as any)?.subscriptionAccessLocked !== true &&
+      (subscriptionStatus === 'active' || (subscriptionStatus === 'trialing' && trialValid))
+    );
+
+  if (!companyUsable) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background p-6">
+        <div className="max-w-md space-y-3 text-center">
+          <h1 className="text-lg font-semibold">Company access paused</h1>
+          <p className="text-sm text-muted-foreground">
+            This company subscription is not active. A system administrator or company admin must restore access before paid workspace features can be used.
           </p>
         </div>
       </div>

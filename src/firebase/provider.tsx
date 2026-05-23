@@ -13,12 +13,14 @@ import type { Firestore } from 'firebase/firestore';
 interface CustomClaims {
   companyId?: string;
   role?: UserRole;
+  systemAdmin?: boolean;
   [key: string]: any;
 }
 
 interface AuthContextType {
   user: User | null;
   userProfile: (UserProfile & { id: string; role: UserRole }) | null;
+  company: (Company & { id: string }) | null;
   companyBaseCurrency: Currency | null;
   isUserLoading: boolean;
   authResolved: boolean;
@@ -26,10 +28,12 @@ interface AuthContextType {
   companyId: string | null;
   role: UserRole | null;
   isDeveloper: boolean;
+  isSystemAdmin: boolean;
   isCompanyMember: boolean;
   isBlocked: boolean;
   needsOnboarding: boolean;
   missingCompanyScope: boolean;
+  missingCompanyMembership: boolean;
   refreshUserProfile: () => Promise<void>;
   auth: Auth;
   firestore: Firestore;
@@ -51,8 +55,9 @@ export function FirebaseProvider({
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<(UserProfile & { id: string; role: UserRole }) | null>(null);
-  const [company, setCompany] = useState<Company | null>(null);
+  const [company, setCompany] = useState<(Company & { id: string }) | null>(null);
   const [claims, setClaims] = useState<CustomClaims | null>(null);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
 
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [authResolved, setAuthResolved] = useState(false);
@@ -61,6 +66,7 @@ export function FirebaseProvider({
   
   const [isBlocked, setIsBlocked] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [missingCompanyMembership, setMissingCompanyMembership] = useState(false);
   
   const didAttemptRepair = useRef(false);
 
@@ -70,11 +76,14 @@ export function FirebaseProvider({
       setProfileResolved(false);
       setClaimsResolved(false);
       setCompany(null);
+      setIsSystemAdmin(false);
+      setMissingCompanyMembership(false);
 
       if (!firebaseUser) {
         setUser(null);
         setUserProfile(null);
         setClaims(null);
+        setIsSystemAdmin(false);
         setProfileResolved(true);
         setClaimsResolved(true);
         didAttemptRepair.current = false;
@@ -87,22 +96,28 @@ export function FirebaseProvider({
       setAuthResolved(true);
       setUser(firebaseUser);
 
-      const [tokenRes, profileSnap] = await Promise.all([
+      const [tokenRes, profileSnap, systemAdminSnap] = await Promise.all([
         firebaseUser.getIdTokenResult(),
         getDoc(doc(firestoreInstance, 'users', firebaseUser.uid)),
+        getDoc(doc(firestoreInstance, 'systemAdmins', firebaseUser.uid)).catch((error) => {
+          console.info('SYSTEM_ADMIN_LOOKUP unavailable:', error?.code || error?.message || error);
+          return null;
+        }),
       ]);
 
+      const hasSystemAdminRecord = systemAdminSnap?.exists() === true;
+      setIsSystemAdmin(hasSystemAdminRecord);
       const profile = profileSnap.exists() ? (profileSnap.data() as any) : null;
       const docCompanyId = profile?.companyId ?? null;
       const docRole = profile?.role ?? null;
       console.log(`PROFILE exists=${profileSnap.exists()} companyId=${docCompanyId}`);
 
       let claims = (tokenRes.claims ?? {}) as any;
-      let role = (claims.role ?? docRole ?? null) as UserRole | null;
+      let role = (hasSystemAdminRecord ? 'developer' : (claims.role ?? docRole ?? null)) as UserRole | null;
       let claimCompanyId = claims.companyId ?? null;
       console.log(`TOKEN0 role=${claims.role} companyId=${claims.companyId}`);
 
-      if (role !== 'developer' && !claimCompanyId && docCompanyId && !didAttemptRepair.current) {
+      if ((hasSystemAdminRecord || (!claimCompanyId && docCompanyId)) && !didAttemptRepair.current) {
         didAttemptRepair.current = true;
         try {
           const functions = getFunctions(firebaseApp, 'us-central1');
@@ -111,7 +126,7 @@ export function FirebaseProvider({
           await firebaseUser.getIdToken(true);
           const refreshed = await firebaseUser.getIdTokenResult();
           claims = (refreshed.claims ?? {}) as any;
-          role = (claims.role ?? docRole ?? null) as UserRole | null;
+          role = (hasSystemAdminRecord ? 'developer' : (claims.role ?? docRole ?? null)) as UserRole | null;
           claimCompanyId = claims.companyId ?? null;
           console.log(`TOKEN1 role=${claims.role} companyId=${claims.companyId}`);
         } catch (e) {
@@ -121,22 +136,67 @@ export function FirebaseProvider({
 
       setClaims(claims);
 
-      if (claimCompanyId) {
-        const companySnap = await getDoc(doc(firestoreInstance, 'companies', claimCompanyId));
-        if (companySnap.exists()) {
-          setCompany(companySnap.data() as Company);
+      const resolvedCompanyId = hasSystemAdminRecord ? null : (claimCompanyId || docCompanyId);
+      let effectiveProfile = profile;
+      let effectiveRole = role;
+
+      if (resolvedCompanyId) {
+        try {
+          const memberSnap = await getDoc(doc(firestoreInstance, 'companies', resolvedCompanyId, 'members', firebaseUser.uid));
+          if (!memberSnap.exists()) {
+            setMissingCompanyMembership(true);
+          } else {
+            const member = memberSnap.data() as any;
+            if (member.status !== 'active') {
+              setMissingCompanyMembership(true);
+              setIsBlocked(member.status === 'blocked');
+            } else {
+              effectiveRole = member.role ?? effectiveRole;
+              effectiveProfile = {
+                ...(profile || {}),
+                companyId: resolvedCompanyId,
+                role: effectiveRole,
+                status: member.status,
+              };
+              const companySnap = await getDoc(doc(firestoreInstance, 'companies', resolvedCompanyId));
+              if (companySnap.exists()) {
+                setCompany({ id: companySnap.id, ...(companySnap.data() as Company) });
+              }
+            }
+          }
+        } catch (error: any) {
+          console.error('COMPANY_CONTEXT failed:', error?.code || error?.message || error);
+          setMissingCompanyMembership(true);
         }
       }
 
       const isActuallyOnboarding = !profileSnap.exists();
-      if (profileSnap.exists()) {
-        setUserProfile({ id: profileSnap.id, ...profile, role: profile.role });
-        setIsBlocked(profile.status === 'blocked');
+      if (hasSystemAdminRecord) {
+        const systemAdmin = systemAdminSnap?.data() as any;
+        setUserProfile({
+          id: profileSnap.exists() ? profileSnap.id : firebaseUser.uid,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || systemAdmin?.email || '',
+          name: profile?.name || systemAdmin?.name || firebaseUser.displayName || firebaseUser.email || 'System admin',
+          isPaid: true,
+          createdAt: profile?.createdAt || systemAdmin?.createdAt || new Date() as any,
+          ...profile,
+          // These must come AFTER the spread so they are never overwritten by raw profile data
+          companyId: '',
+          status: systemAdmin?.status === 'blocked' ? 'blocked' : 'active',
+          role: 'developer',
+        });
+        setIsBlocked(systemAdmin?.status === 'blocked');
+        setNeedsOnboarding(false);
+      } else if (profileSnap.exists()) {
+        setUserProfile({ id: profileSnap.id, ...effectiveProfile, role: effectiveRole || profile.role });
+        setIsBlocked(effectiveProfile?.status === 'blocked');
+        setNeedsOnboarding(isActuallyOnboarding);
       } else {
         setUserProfile(null);
         setIsBlocked(false);
+        setNeedsOnboarding(isActuallyOnboarding);
       }
-      setNeedsOnboarding(isActuallyOnboarding);
       
       setClaimsResolved(true);
       setProfileResolved(true);
@@ -197,11 +257,11 @@ export function FirebaseProvider({
     };
   }, [user, authInstance]);
   
-  const companyId = (claims?.companyId as string | undefined) ?? null;
-  const role = (claims?.role as UserRole | undefined) ?? null;
+  const companyId = isSystemAdmin ? null : ((claims?.companyId as string | undefined) ?? userProfile?.companyId ?? null);
+  const role = (isSystemAdmin ? 'developer' : ((claims?.role as UserRole | undefined) ?? userProfile?.role ?? null)) as UserRole | null;
   const companyBaseCurrency = company?.baseCurrency ?? null;
-  const isDeveloper = role === 'developer';
-  const isCompanyMember = !!companyId && !isDeveloper;
+  const isDeveloper = isSystemAdmin;
+  const isCompanyMember = !!companyId && !isSystemAdmin && !missingCompanyMembership;
 
   const authReady =
     authResolved &&
@@ -215,7 +275,7 @@ export function FirebaseProvider({
   const finalMissingCompanyScope =
     authReady &&
     !!user &&
-    !isDeveloper &&
+    !isSystemAdmin &&
     !needsOnboarding &&
     !companyId;
   
@@ -225,6 +285,7 @@ export function FirebaseProvider({
     () => ({
       user,
       userProfile,
+      company,
       companyBaseCurrency,
       isUserLoading,
       authResolved,
@@ -233,17 +294,19 @@ export function FirebaseProvider({
       role,
       isCompanyMember,
       isDeveloper,
+      isSystemAdmin,
       isBlocked,
       needsOnboarding,
       missingCompanyScope: finalMissingCompanyScope,
+      missingCompanyMembership,
       refreshUserProfile,
       auth: authInstance,
       firestore: firestoreInstance,
       firebaseApp,
     }),
     [
-      user, userProfile, companyBaseCurrency, isUserLoading, authResolved, sessionReady, companyId, role,
-      isCompanyMember, isDeveloper, isBlocked, needsOnboarding, finalMissingCompanyScope,
+      user, userProfile, company, companyBaseCurrency, isUserLoading, authResolved, sessionReady, companyId, role,
+      isCompanyMember, isDeveloper, isSystemAdmin, isBlocked, needsOnboarding, finalMissingCompanyScope, missingCompanyMembership,
       refreshUserProfile, authInstance, firestoreInstance, firebaseApp
     ]
   );
